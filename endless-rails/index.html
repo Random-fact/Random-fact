@@ -475,7 +475,7 @@ const Rail = {
     if (!z._g && z.kind !== 'station') { const g = this.grade(z); for (const q of g.under) if (Math.abs(s - q.s) < 26) o.ud = q; for (const q of g.over) if (Math.abs(s - q.s) < 30) o.ob = q; }
     if (z.kind !== 'station' && z.kind !== 'bridge' && z.kind !== 'tunnel' && z.kind !== 'city') o.wall = sm(.58, .66, vn1(s / 650, sd + 61));
     o.dep = 0; if (z.kind === 'station' && !z._cing) { const dp = this.depot(z); if (dp) { const t = (s - dp.s) * dp.side; o.dep = sm(-175, -135, t) * (1 - sm(42, 72, t)); o.depU = dp.u; } }
-    if (z.kind === 'city' || (z.kind === 'station' && z.sk === 'city')) o.city = sm(0, 250, z.half - d);
+    if (z.kind === 'city' || (z.kind === 'station' && z.sk === 'city')) { o.city = sm(0, 250, z.half - d); o.cityU = 22 + 5 * (52 + Math.floor(H(sd, z.zi, 205) * 5) * 8); }
     if (z.kind === 'village' || (z.kind === 'station' && (z.sk === 'village' || z.sk === 'town'))) o.vill = sm(0, 150, z.half - d);
     if (z.kind === 'industrial') o.ind = sm(0, 150, z.half - d);
     if (z.kind === 'bridge') { o.dip = 1 - sm(0, 60, d - z.riverHalf); o.deck = d < z.half ? 1 : 0; }
@@ -840,7 +840,7 @@ function terrH(b, u, x, z) {
       const wl = b.wall > 0 ? Math.min(hn - bed, 6.5) * b.wall * sm(.7, 1.2, d0) : 0;
       h = Math.min(hn, bed + wl + Math.max(0, d0 - (wl > 0 ? 1.2 : 0)) * ks); if (d1 < 1e8) h = Math.min(h, bed + d1 * ks);
     } }
-  if (b.city > 0) h = lerp(h, b.ty - .5, b.city * (1 - sm(220, 380, au)));
+  if (b.city > 0) h = lerp(h, b.ty - .5, b.city * (1 - sm(b.cityU + 15, b.cityU + 175, au)));
   if (b.vill > 0) h = lerp(h, b.ty - .5, b.vill * .6 * (1 - sm(100, 240, au)));
   if (b.ind > 0) h = lerp(h, b.ty - .5, b.ind * (1 - sm(150, 300, au)));
   if (b.stf > 0) h = lerp(h, b.ty - .5, b.stf * (1 - sm(75, 175, au)));
@@ -861,7 +861,19 @@ function terrH(b, u, x, z) {
 /* height of the rendered terrain mesh at (s, u): the same rows / columns and triangle split as Chunk.buildTerrain, so roads,
    lamps and vehicles sit exactly on the visible ground instead of on the analytic surface between coarse columns */
 const MHC = new Map();
-function meshClear() { MHC.clear(); }
+function meshClear() { MHC.clear(); RSPAN.clear(); }
+/* how far a road across the line can run before the ground gets too steep (>20 % between samples) or climbs more than 30 m:
+   beyond that the road ends instead of climbing a mountainside */
+const RSPAN = new Map();
+function roadSpan(s, lo, hi) {
+  const key = Math.round(s * 10) + '|' + lo + '|' + hi; let r = RSPAN.get(key); if (r) return r;
+  let L = lo, R = hi;
+  for (const sg of [1, -1]) {
+    const base = meshH(s, BEDC + sg * 30), lim = sg > 0 ? hi - BEDC : BEDC - lo; let prev = base;
+    for (let du = 36; du <= lim; du += 6) { const h = meshH(s, BEDC + sg * du); if (Math.abs(h - prev) > 1.2 || Math.abs(h - base) > 30) { if (sg > 0) R = BEDC + du - 6; else L = BEDC - du + 6; break; } prev = h; }
+  }
+  r = [L, R]; if (RSPAN.size > 400) RSPAN.clear(); RSPAN.set(key, r); return r;
+}
 function meshRow(s0) { let r = MHC.get(s0); if (!r) { if (MHC.size > 900) MHC.clear(); const p = Rail.pose(s0, {}); r = { p, b: Rail.bio(s0), c: Math.cos(p.hd), sn: Math.sin(p.hd), h: new Float64Array(NC).fill(NaN) }; MHC.set(s0, r); } return r; }
 function meshGH(r, k) { let h = r.h[k]; if (h !== h) { const u = UC[k]; h = r.h[k] = terrH(r.b, u, r.p.x - r.c * u, r.p.z + r.sn * u); } return h; }
 function meshH(s, u) {
@@ -893,7 +905,7 @@ function terrColor(b, u, x, z, h) {
   const bd = bedD(u), gr = (1 - sm(2.8, 4.0, bd)) * (1 - b.dip); r = lerp(r, .34, gr * (1 - sn * .6)); g = lerp(g, .32, gr * (1 - sn * .6)); bl = lerp(bl, .29, gr * (1 - sn * .6));
   /* bare cutting faces: rock / clay colour on steep engineered slopes next to the formation */
   const cutk = sm(.8, 3.5, h - b.ty) * (1 - sm(12, 34, bd)) * (1 - b.urban); if (cutk > 0) { const cc = b.mount > .45 ? [.46 + .05 * n1, .44 + .04 * n1, .41] : [.47 + .04 * n1, .4, .3]; r = lerp(r, cc[0], cutk * .75); g = lerp(g, cc[1], cutk * .75); bl = lerp(bl, cc[2], cutk * .75); }
-  const ur = Math.max(b.city, b.ind, b.stn * .6) * (1 - sm(200, 340, au)); r = lerp(r, .36, ur); g = lerp(g, .36, ur); bl = lerp(bl, .37, ur);
+  const ur = Math.max(b.city * (1 - sm(b.cityU || 300, (b.cityU || 300) + 90, au)), b.ind * (1 - sm(200, 340, au)), b.stn * .6 * (1 - sm(200, 340, au))); r = lerp(r, .36, ur); g = lerp(g, .36, ur); bl = lerp(bl, .37, ur);
   const vl = b.vill * (1 - sm(100, 240, au)) * .35; r = lerp(r, .3, vl); g = lerp(g, .42, vl);
   _col[0] = r; _col[1] = g; _col[2] = bl; return _col;
 }
@@ -1175,8 +1187,7 @@ const ZoneDecor = {
       }
     }
     for (let s = Math.ceil(Math.max(ch.s0, z.c - z.half + 20) / 52) * 52; s < Math.min(ch.s1, z.c + z.half - 20); s += 52) for (const sg of [-1, 1]) {
-      const q = (ss, uu) => { const L = this.loc(ss, uu); return [L.x, meshH(ss, uu) + .08, L.z]; };
-      B.lit.quad(q(s, sg * 30 - 3.5), q(s + 52, sg * 30 - 3.5), q(s + 52, sg * 30 + 3.5), q(s, sg * 30 + 3.5), [.2, .2, .21], true);
+      this.strip(B.lit, s, s + 52, sg * 30 - 3.5, sg * 30 + 3.5, [.2, .2, .21]);
     }
     const a = Math.max(ch.s0, z.c - 250), b = Math.min(ch.s1, z.c + 250);
     if (a < b) {
@@ -1193,7 +1204,7 @@ const ZoneDecor = {
     if (s < ch.s0 || s >= ch.s1) return;
     const bi = Rail.bio(s);
     const q = (ss, uu) => { const L = this.loc(ss, uu); return [L.x, (uu > -11 && uu < 6.5 ? L.ty - .18 : meshH(ss, uu) + .06), L.z]; };
-    const RR = z.kind === 'nature' ? 252 : 120; for (let u = -RR; u < RR; u += 6) B.lit.quad(q(s - 3.5, u), q(s + 3.5, u), q(s + 3.5, u + 6), q(s - 3.5, u + 6), [.17, .17, .18], true);
+    const sp = z.kind === 'nature' ? roadSpan(s, -252, 252) : [-120, 120]; for (let u = sp[0]; u < sp[1]; u += 6) B.lit.quad(q(s - 3.5, u), q(s + 3.5, u), q(s + 3.5, u + 6), q(s - 3.5, u + 6), [.17, .17, .18], true);
     /* rubber crossing panels across both tracks, white stop lines and edge marks */
     for (const ut of [0, -U2]) { const L = this.loc(s, ut); B.lit.add(TPL.box, L.x, L.ty - .12, L.z, 3.1, .1, 7.2, L.hd, 0, [.24, .24, .25]); }
     for (const [uu, f] of [[8.2, 1], [-12.8, -1]]) { const L = this.loc(s - 1.75 * f, uu); B.lit.add(TPL.box, L.x, (uu > 0 ? terrH(bi, uu, L.x, L.z) : terrH(bi, uu, L.x, L.z)) + .07, L.z, .4, .03, 3.4, L.hd + Math.PI / 2, 0, [.92, .92, .9]); }
@@ -1326,9 +1337,15 @@ const ZoneDecor = {
       Lc.g.position.set(a.x, a.y, a.z); Lc.g.rotation.y = a.hd + (side > 0 ? Math.PI : 0); ch.group.add(Lc.g);
     }
   },
+  /* flat road / pavement rectangle in track space, subdivided so that it lies on the rendered terrain instead of spanning it in one plane */
+  strip(Bl, s0, s1, u0, u1, col, dy, step) {
+    step = step || 8; const ns = Math.max(1, Math.ceil(Math.abs(s1 - s0) / step)), nu = Math.max(1, Math.ceil(Math.abs(u1 - u0) / step)), d = dy || .08, P = [];
+    for (let i = 0; i <= ns; i++) { const ss = s0 + (s1 - s0) * i / ns, row = []; for (let j = 0; j <= nu; j++) { const uu = u0 + (u1 - u0) * j / nu, L = this.loc(ss, uu); row.push([L.x, meshH(ss, uu) + d, L.z]); } P.push(row); }
+    for (let i = 0; i < ns; i++) for (let j = 0; j < nu; j++) Bl.quad(P[i][j], P[i + 1][j], P[i + 1][j + 1], P[i][j + 1], col, true);
+  },
   /* road along u at track position s0, following a height profile yf(u); markings, verges and street lamps */
   roadAcross(ch, B, s0, u0, u1, yf, o) {
-    if (s0 + 6 < ch.s0 || s0 - 6 >= ch.s1) return; o = o || {}; const w = o.w || 3.8, St = 6;
+    if (s0 + 6 < ch.s0 || s0 - 6 >= ch.s1) return; o = o || {}; const w = o.w || 3.8, St = 6, sp = roadSpan(s0, u0, u1); u0 = Math.max(u0, sp[0]); u1 = Math.min(u1, sp[1]);
     const q = (ss, uu, dy) => { const L = this.loc(ss, uu); return [L.x, yf(uu, L, ss) + (dy || .06), L.z]; };
     for (let u = u0; u < u1; u += St) {
       const ub = Math.min(u1, u + St); if (o.skip && o.skip(u, ub)) continue;
@@ -1713,15 +1730,15 @@ Object.assign(ZoneDecor, {
     for (const e of edges) for (const sg of [-1, 1]) {
       const u = sg * e; if (skipSt(kb * BLK, (kb + 1) * BLK, Math.min(u - 6, u + 6), Math.max(u - 6, u + 6))) continue;
       const sa = kb * BLK, sb = sa + BLK;
-      Bl.quad(q(sa, u - 6), q(sb, u - 6), q(sb, u + 6), q(sa, u + 6), [.15, .15, .17], true);
-      for (const sd2 of [-1, 1]) Bl.quad(q(sa, u + sd2 * 6), q(sb, u + sd2 * 6), q(sb, u + sd2 * 8.4), q(sa, u + sd2 * 8.4), [.5, .5, .48], true);
-      Bl.quad(q(sa, u - .12, .1), q(sb, u - .12, .1), q(sb, u + .12, .1), q(sa, u + .12, .1), [.8, .78, .6], true);
+      this.strip(Bl, sa, sb, u - 6, u + 6, [.15, .15, .17]);
+      for (const sd2 of [-1, 1]) this.strip(Bl, sa, sb, u + sd2 * 6, u + sd2 * 8.4, [.5, .5, .48], .1);
+      this.strip(Bl, sa, sb, u - .12, u + .12, [.8, .78, .6], .11);
     }
     const sa = kb * BLK - 6;
     for (const sg of [-1, 1]) {
       if (skipSt(sa, sa + 12, sg > 0 ? 14 : -U1, sg > 0 ? U1 : -14)) continue;
-      Bl.quad(q(sa, sg * 14), q(sa + 12, sg * 14), q(sa + 12, sg * U1), q(sa, sg * U1), [.15, .15, .17], true);
-      for (const t of [-1, 1]) Bl.quad(q(sa + 6 + t * 6, sg * 14), q(sa + 6 + t * 8.4, sg * 14), q(sa + 6 + t * 8.4, sg * U1), q(sa + 6 + t * 6, sg * U1), [.5, .5, .48], true);
+      this.strip(Bl, sa, sa + 12, sg * 14, sg * U1, [.15, .15, .17]);
+      for (const t of [-1, 1]) this.strip(Bl, sa + 6 + t * 6, sa + 6 + t * 8.4, sg * 14, sg * U1, [.5, .5, .48], .1);
     }
     for (const sg of [-1, 1]) for (const e of [edges[0], edges[2] || edges[1]]) {
       const u = sg * (e + 7.5); if (skipSt(sc - 2, sc + 2, u - 1, u + 1)) continue;
@@ -1753,15 +1770,15 @@ Object.assign(ZoneDecor, {
       /* street surfaces */
       if (s % (step * 3) === 0) for (const ul of lanes) {
         const sa = s, sb = s + step * 3, w2 = Math.abs(ul) > 60 ? 3.2 : 4;
-        Bl.quad(q(sa, ul - w2), q(sb, ul - w2), q(sb, ul + w2), q(sa, ul + w2), town ? [.2, .2, .21] : [.38, .33, .27], true);
-        if (town) for (const t of [-1, 1]) Bl.quad(q(sa, ul + t * w2), q(sb, ul + t * w2), q(sb, ul + t * (w2 + 1.8)), q(sa, ul + t * (w2 + 1.8)), [.5, .5, .48], true);
+        this.strip(Bl, sa, sb, ul - w2, ul + w2, town ? [.2, .2, .21] : [.38, .33, .27]);
+        if (town) for (const t of [-1, 1]) this.strip(Bl, sa, sb, ul + t * w2, ul + t * (w2 + 1.8), [.5, .5, .48], .1);
         const L = this.loc(sa + 10, ul + 5), gy = meshH(sa + 10, ul + 5); Bl.add(TPL.boxB, L.x, gy - .3, L.z, .15, 5, .15, 0, 0, 0x4a4040); Be.add(TPL.box, L.x, gy + 4.6, L.z, .5, .25, .5, 0, 0, T.lamp); B.glow.push([L.x, gy + 4.4, L.z, 3.6, T.lamp[0], T.lamp[1], T.lamp[2]]);
       }
     }
     /* cross lane to the main track crossing */
     if (sOnly === null || sOnly === undefined) for (const sg of [-1, 1]) for (let s = Math.ceil(Math.max(ch.s0, z.c - z.half) / 78) * 78; s < Math.min(ch.s1, z.c + z.half); s += 78) {
       if (this.stnClear(z, s - 4, s + 4, sg > 0 ? 12 : -90, sg > 0 ? 90 : -12)) continue;
-      Bl.quad(q(s - 3, sg * 12), q(s + 3, sg * 12), q(s + 3, sg * (town ? 84 : 34)), q(s - 3, sg * (town ? 84 : 34)), town ? [.2, .2, .21] : [.38, .33, .27], true);
+      this.strip(Bl, s - 3, s + 3, sg * 12, sg * (town ? 84 : 34), town ? [.2, .2, .21] : [.38, .33, .27]);
     }
   }
 });
@@ -3108,12 +3125,12 @@ const Traffic = {
     } else {
       if (z.kind === 'village' || (z.kind === 'station' && (z.sk === 'village' || z.sk === 'town'))) for (const sg of [-1, 1]) add('s', sg * 30, z.c - z.half + 30, z.c + z.half - 30, { vm: 9, vill: true });
       if (z.kind === 'industrial') for (const sg of [-1, 1]) add('s', sg * 30, z.c - z.half + 20, z.c + z.half - 20, { vm: 8, ind: true });
-      for (const s of xs) add('u', s, z.kind === 'nature' ? -260 : -120, z.kind === 'nature' ? 260 : 120, { vm: z.kind === 'nature' ? 17 : 11, xing: true, rural: z.kind === 'nature' });
+      for (const s of xs) { const sp = z.kind === 'nature' ? roadSpan(s, -252, 252) : [-120, 120]; add('u', s, sp[0], sp[1], { vm: z.kind === 'nature' ? 17 : 11, xing: true, rural: z.kind === 'nature' }); }
       /* grade-separated roads: under the rail bridge, over the cutting, along the river bank */
       const gr = Rail.grade(z);
-      for (const U of gr.under) add('u', U.s, -260, 260, { vm: 16, rural: true, under: U });
-      for (const O of gr.over) add('u', O.s, -260, 260, { vm: 16, rural: true, over: O });
-      if (gr.river) add('u', gr.river.s, -300, 300, { vm: 15, rural: true, river: true });
+      for (const U of gr.under) { const sp = roadSpan(U.s, -260, 260); add('u', U.s, sp[0], sp[1], { vm: 16, rural: true, under: U }); }
+      for (const O of gr.over) { const sp = roadSpan(O.s, -260, 260); add('u', O.s, sp[0], sp[1], { vm: 16, rural: true, over: O }); }
+      if (gr.river) { const sp = roadSpan(gr.river.s, -300, 300); add('u', gr.river.s, sp[0], sp[1], { vm: 15, rural: true, river: true }); }
     }
     /* intersections between axes */
     for (const A of L) if (A.ax === 's') for (const Bn of L) if (Bn.ax === 'u') {
@@ -3738,18 +3755,18 @@ const Volcano = {
   list: new Map(), scene: null, smoke: null, ash: null, erupting: null,
   init(scene) { this.scene = scene; this.smoke = new PartSys(scene, 900, false); this.fire = new PartSys(scene, 400, true); },
   reset() { for (const v of this.list.values()) { if (v) this.scene.remove(v.g); }; this.list.clear(); this.smoke.clear(); this.fire.clear(); this.erupting = null; },
-  makeCone(h, rb, snow) {
-    const g = new THREE.CylinderGeometry(rb * .09, rb, h, 22, 8, true), p = g.attributes.position, col = new Float32Array(p.count * 3);
-    for (let i = 0; i < p.count; i++) { const y = (p.getY(i) + h / 2) / h, n = .85 + .15 * Math.sin(i * 12.9898), c = y < .22 ? [.16, .26, .14] : y < .62 ? [.34, .3, .27] : y < .84 ? (snow ? [.88, .9, .94] : [.28, .25, .24]) : [.2, .17, .16]; col[i * 3] = c[0] * n; col[i * 3 + 1] = c[1] * n; col[i * 3 + 2] = c[2] * n; }
+  /* the cone continues E metres below its foot (same slope) so that it rises out of the distant haze instead of standing on a floating disc */
+  makeCone(h, rb, snow, E) {
+    E = E || 0; const H2 = h + E, g = new THREE.CylinderGeometry(rb * .09, rb + rb * .91 * E / h, H2, 22, 9, true), p = g.attributes.position, col = new Float32Array(p.count * 3);
+    for (let i = 0; i < p.count; i++) { const y = (p.getY(i) + H2 / 2 - E) / h, n = .85 + .15 * Math.sin(i * 12.9898), c = y < 0 ? [.13, .19, .13] : y < .22 ? [.16, .26, .14] : y < .62 ? [.34, .3, .27] : y < .84 ? (snow ? [.88, .9, .94] : [.28, .25, .24]) : [.2, .17, .16]; col[i * 3] = c[0] * n; col[i * 3 + 1] = c[1] * n; col[i * 3 + 2] = c[2] * n; }
     g.setAttribute('color', new THREE.BufferAttribute(col, 3)); return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide }));
   },
   region(r) {
     let v = this.list.get(r); if (v !== undefined) return v; const sd = Rail.seed;
     if (H(sd, r, 300) > .4) { this.list.set(r, null); return null; }
     const s = r * 24000 + (.2 + H(sd, r, 301) * .6) * 24000, side = H(sd, r, 302) < .5 ? -1 : 1, u = side * (1650 + H(sd, r, 303) * 700), h = 460 + H(sd, r, 304) * 240, rb = 1000 + H(sd, r, 305) * 300;
-    const a = {}; ptAt(s, u, a); const base = Rail.ty(s) - 30, g = new THREE.Group(), cone = this.makeCone(h, rb, H(sd, r, 306) < .5);
-    cone.position.y = base + h / 2; g.add(cone);
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(rb * 1.5, 24), new THREE.MeshBasicMaterial({ color: 0x2a3a24, fog: false })); disc.rotation.x = -Math.PI / 2; disc.position.y = base - 5; g.add(disc);
+    const a = {}; ptAt(s, u, a); const base = Rail.ty(s) - 30, E = 220, g = new THREE.Group(), cone = this.makeCone(h, rb, H(sd, r, 306) < .5, E);
+    cone.position.y = base - E + (h + E) / 2; g.add(cone);
     const glow = new THREE.Mesh(new THREE.CircleGeometry(rb * .11, 12), new THREE.MeshBasicMaterial({ color: 0xff5a1a, fog: false })); glow.rotation.x = -Math.PI / 2; glow.position.y = base + h + .5; glow.visible = false; g.add(glow);
     g.position.set(a.x, 0, a.z); g.visible = false; this.scene.add(g);
     v = { r, s, u, x: a.x, z: a.z, top: base + h, g, cone, glow, h, rb, base, er: 0 }; this.list.set(r, v); return v;
