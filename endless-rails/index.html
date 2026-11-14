@@ -1,5 +1,9 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><meta name="theme-color" content="#0b1017">
 <title>Endless Rails</title>
+<meta name="description" content="Нескінченна подорож залізницею: двоколійна магістраль, живі станції, інші потяги, міста, мости й тунелі.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600&family=Manrope:wght@400;600;800&display=swap">
 <style>
@@ -143,6 +147,8 @@ body.menuopen #evcard,body.nohud #evcard{opacity:0!important}
 @media (max-width:600px) and (orientation:portrait){#evcard{left:max(12px,var(--sal));right:max(12px,var(--sar));width:auto;top:calc(max(10px,var(--sat)) + clamp(150px,34vmin,190px))}}
 @media (orientation:landscape) and (max-height:430px){#evcard{top:calc(max(6px,var(--sat)) + 44px);width:min(300px,40vw);padding:6px 10px}#evcard .ic{font-size:20px}#evcard span{font-size:11.5px}}
 </style>
+</head>
+<body>
 <div id="app">
 <canvas id="gl"></canvas><canvas id="glass"></canvas><div id="vignette"></div>
 <div id="hud">
@@ -468,6 +474,7 @@ const Rail = {
     o.city = 0; o.vill = 0; o.ind = 0; o.dip = 0; o.tun = 0; o.u2 = U2; o.deck = 0; o.ud = null; o.ob = null; o.wall = 0;
     if (!z._g && z.kind !== 'station') { const g = this.grade(z); for (const q of g.under) if (Math.abs(s - q.s) < 26) o.ud = q; for (const q of g.over) if (Math.abs(s - q.s) < 30) o.ob = q; }
     if (z.kind !== 'station' && z.kind !== 'bridge' && z.kind !== 'tunnel' && z.kind !== 'city') o.wall = sm(.58, .66, vn1(s / 650, sd + 61));
+    o.dep = 0; if (z.kind === 'station' && !z._cing) { const dp = this.depot(z); if (dp) { const t = (s - dp.s) * dp.side; o.dep = sm(-175, -135, t) * (1 - sm(42, 72, t)); o.depU = dp.u; } }
     if (z.kind === 'city' || (z.kind === 'station' && z.sk === 'city')) o.city = sm(0, 250, z.half - d);
     if (z.kind === 'village' || (z.kind === 'station' && (z.sk === 'village' || z.sk === 'town'))) o.vill = sm(0, 150, z.half - d);
     if (z.kind === 'industrial') o.ind = sm(0, 150, z.half - d);
@@ -523,7 +530,11 @@ Object.assign(Rail, {
   xings(z) {
     if (z.xs) return z.xs; const o = [];
     if (z.kind === 'village') o.push(z.c);
-    else if (z.kind === 'industrial' || z.kind === 'nature') { if (z.xing) o.push(z.c); }
+    else if (z.kind === 'industrial' || z.kind === 'nature') {
+      /* no level crossing where the road would have to climb a steep mountainside */
+      if (z.xing) { const g0 = z._g; z._g = true; const b = this.bio(z.c), p = this.pose(z.c, {}), c = Math.cos(p.hd), sn = Math.sin(p.hd), us = [-240, -150, -90, -45, 40, 85, 145, 235], hs = us.map(u => terrH(b, u, p.x - c * u, p.z + sn * u)); z._g = g0;
+        let steep = false; for (let i = 0; i < us.length - 1; i++) if (i !== 3 && Math.abs(hs[i + 1] - hs[i]) / (us[i + 1] - us[i]) > .22) steep = true; if (!steep) o.push(z.c); }
+    }
     else if (z.kind === 'city' || (z.kind === 'station' && z.sk === 'city')) { const B = this.town(z).blk; for (let kb = Math.ceil((z.c - z.half + 100) / B); kb * B < z.c + z.half - 100; kb++) if (this.isCrossStreet(z, kb) && (z.kind !== 'station' || Math.abs(kb * B - z.c) > 140)) o.push(kb * B); }
     else if (z.kind === 'station' && z.sk !== 'forest') o.push(z.c + (H(this.seed, z.zi, 241) < .5 ? -1 : 1) * (z.sk === 'town' ? 240 : 200));
     z.xs = o; return o;
@@ -538,6 +549,13 @@ Object.assign(Rail, {
     else if (z.sk === 'village') c = r < .15 ? 'freight' : 'small';
     else c = 'halt';
     z.catn = c; this.stl(z); return c;
+  },
+  /* engine depot of a freight / junction station (towns and villages only, out beyond the houses) */
+  depot(z) {
+    if (z.dp !== undefined) return z.dp; z.dp = null; if (z.kind !== 'station' || z.sk === 'city' || z.sk === 'forest') return null;
+    const cat = this.cat(z); if ((cat !== 'freight' && cat !== 'junction') || H(this.seed, z.zi, 270) > .85) return null;
+    const st = this.stl(z), side = H(this.seed, z.zi, 271) < .5 ? -1 : 1;
+    z.dp = { side, s: z.c + side * 560, u: -(Math.abs(st.tu[st.N]) + (cat === 'freight' ? 30 : 24)) }; return z.dp;
   },
   /* full layout of a station: tracks (lateral offsets, 0 = main), platforms (u0..u1), half-length P */
   stl(z) {
@@ -802,7 +820,6 @@ const UC = (() => { const R = [0, 1.8, 3.4, 4.6, 7, 10, 14, 20, 28, 38, 52, 70, 
 const NC = UC.length;
 const QL = { tree: 1, shadow: 0, ahead: 8 }; // live quality knobs (set by Quality)
 
-function u2At(s) { return U2; }
 function electrified(s) { if (typeof G !== 'undefined' && G.train && G.train.type === 'hs') return Rail.bio(s).tun < .4; const z = Rail.zoneAt(s); return z.kind === 'station' || z.kind === 'city' || z.kind === 'industrial' || vn1(s / 9000, Rail.seed + 31) > .62; }
 
 function k6(s, u) { return H(s | 0, u | 0, 5) * 6; }
@@ -827,6 +844,7 @@ function terrH(b, u, x, z) {
   if (b.vill > 0) h = lerp(h, b.ty - .5, b.vill * .6 * (1 - sm(100, 240, au)));
   if (b.ind > 0) h = lerp(h, b.ty - .5, b.ind * (1 - sm(150, 300, au)));
   if (b.stf > 0) h = lerp(h, b.ty - .5, b.stf * (1 - sm(75, 175, au)));
+  if (b.dep > 0) { const du = u < b.depU - 16 ? b.depU - 16 - u : u > -2 ? u + 2 : 0; h = lerp(h, b.ty - .5, b.dep * (1 - sm(0, 38, du))); }
   if (b.dip > 0) h = lerp(h, -6, b.dip * (1 - sm(180, 360, au)));
   /* road underpass: a trench across the line, level under the rail bridge and climbing to the natural ground at 7 % */
   if (b.ud) { const w = 1 - sm(10, 15, Math.abs(b.s - b.ud.s)); if (w > 0) { const prof = lerp(b.ud.rl, h, sm(14, 120, Math.abs(u - BEDC))); h = lerp(h, Math.min(h, prof), w); } }
@@ -1035,7 +1053,7 @@ class Chunk {
     for (let s = Math.ceil(this.s0 / 100) * 100; s < this.s1; s += 100) { const bi = Rail.bio(s); if (bi.tun > .1 || bi.deck || bi.stf > .2) continue; ptAt(s, 4.9, a); T.add(TPL.boxB, a.x, a.y - .5, a.z, .14, 1.25, .14, a.hd, 0, s % 1000 === 0 ? [.95, .85, .2] : [.92, .92, .9]); }
     for (let s = this.s0; s < this.s1; s += 5) {
       const bi = Rail.bio(s); if (bi.tun > .1 || bi.deck || bi.stf > .1 || bi.ud) continue;
-      ptAt(s, 4.6, a); ptAt(s + 5, 4.6, b2); { const dx = b2.x - a.x, dz = b2.z - a.z; T.add(TPL.box, (a.x + b2.x) / 2, (a.y + b2.y) / 2 - .32, (a.z + b2.z) / 2, .36, .22, Math.hypot(dx, dz), Math.atan2(dx, dz), Math.atan2(b2.y - a.y, Math.hypot(dx, dz)), [.6, .6, .58]); }
+      ptAt(s, 4.6, a); ptAt(s + 5, 4.6, b2); { const dx = b2.x - a.x, dz = b2.z - a.z; T.add(TPL.boxNB, (a.x + b2.x) / 2, (a.y + b2.y) / 2 - .32, (a.z + b2.z) / 2, .36, .22, Math.hypot(dx, dz), Math.atan2(dx, dz), Math.atan2(b2.y - a.y, Math.hypot(dx, dz)), [.46, .46, .44]); }
       if (bi.wall > .05) for (const sg of [1, -1]) {
         const uw = sg > 0 ? BEDW + .8 : -U2 - BEDW - .8, ut = sg > 0 ? BEDW + 1.3 : -U2 - BEDW - 1.3;
         ptAt(s + 2.5, ut, c1); const top = terrH(bi, ut, c1.x, c1.z), base = bi.ty - .9, hw = top - base; if (hw < 1.2) continue;
@@ -1055,7 +1073,7 @@ class Chunk {
       Rail.pose(s, p); const c = Math.cos(p.hd), sn = Math.sin(p.hd);
       const dens = (.06 + .55 * b.forest) * (1 - b.field * .75) * (1 - sm(.4, .9, b.mount) * .5) * (1 - b.urban * .9) * q;
       for (let u = -250; u <= 250; u += 11) {
-        const au = Math.abs(u); if (bedD(u) < 10 || (road && au < 300) || (b.stn > .1 && au < 70) || (b.tin > -90 && Math.abs(u - TUN.uc) < 40) || (b.jz && bedD(u - b.ju) < 10)) continue;
+        const au = Math.abs(u); if (bedD(u) < 10 || (b.dep > .05 && u < 4 && u > b.depU - 40) || (road && au < 300) || (b.stn > .1 && au < 70) || (b.tin > -90 && Math.abs(u - TUN.uc) < 40) || (b.jz && bedD(u - b.ju) < 10)) continue;
         const hs = H(s | 0, u | 0, sd + 40); if (hs > dens * (au > 120 ? .45 : 1)) continue;
         const ss = s + (H(s | 0, u | 0, sd + 41) - .5) * 10, uu = u + (H(s | 0, u | 0, sd + 42) - .5) * 10;
         const x = p.x - c * uu + sn * (ss - s) * 0, z = p.z + sn * uu + c * (ss - s) * 0;
@@ -1122,7 +1140,7 @@ const ZoneDecor = {
       if (z.kind === 'industrial') T.push(() => this.industrial(ch, B, z));
       if (z.kind === 'bridge') T.push(() => this.bridge(ch, B, z));
       if (z.kind === 'tunnel') T.push(() => this.tunnel(ch, B, z));
-      if (z.kind === 'station') T.push(() => this.station(ch, B, z));
+      if (z.kind === 'station') { T.push(() => this.station(ch, B, z)); T.push(() => this.depot(ch, B, z)); }
       T.push(() => { for (const s of Rail.xings(z)) this.crossing(ch, B, z, s); this.grade(ch, B, z); if (z.kind === 'city' || z.kind === 'village' || (z.kind === 'station' && z.sk !== 'forest')) this.landmark(ch, B, z); });
     }
     return T;
@@ -1285,6 +1303,28 @@ const ZoneDecor = {
     { const C = W(0, Hp + .1); B.lit.add(TPL.box, C[0], C[1], C[2], 2 * Wp + 1.2, .5, 1.2, L0.hd, 0, [.55, .54, .52]); const Ys = W(0, sh + hw + 1.6); B.lit.add(TPL.box, Ys[0], Ys[1], Ys[2], 2.6, 1.0, .3, L0.hd, 0, [.75, .72, .66]); }
     for (const sg of [-1, 1]) { const p = W(sg * (hw - 1.4), sh + hw * .8); B.emis.add(TPL.box, p[0], p[1], p[2], .5, .22, .5, 0, 0, [1, .9, .65]); B.glow.push([p[0], p[1] - .2, p[2], 2.4, 1, .9, .65]); }
     const sg2 = this.loc(sp + out * -2, Wp + 1.8 + uc); B.lit.add(TPL.boxB, sg2.x, sg2.ty - .5, sg2.z, .12, 2.6, .12, 0, 0, 0x555a60); B.emis.add(TPL.box, sg2.x, sg2.ty + 2.4, sg2.z, .7, .7, .06, sg2.hd, 0, [.95, .95, 1]);
+  },
+  /* locomotive depot beside freight / junction stations of towns and villages: engine shed, two shed roads joining track 2, stabled locomotives */
+  depot(ch, B, z) {
+    const dp = Rail.depot(z); if (!dp) return; const side = dp.side, t2s = t => dp.s + side * t;
+    if (Math.max(ch.s0, Math.min(t2s(-160), t2s(40))) >= Math.min(ch.s1, Math.max(t2s(-160), t2s(40)))) return;
+    for (const k of [-5, 5]) ch.lay(s => { const t = (s - dp.s) * side; if (t < -150 || t > 33) return null; return t < -50 ? lerp(-U2, dp.u + k, sm(-150, -50, t)) : dp.u + k; }, { avoidMain: true, wood: true, bcol: 0x5d5a55 });
+    if (dp.s >= ch.s0 && dp.s < ch.s1) {
+      const L = this.loc(dp.s, dp.u), y0 = L.ty - .5, o = { x: L.x, z: L.z, yaw: L.hd }, wc = [.55, .3, .22], WR = [.32, .33, .36];
+      Town.walls(B.build, o, -10.5, -32, 10.5, 32, y0, y0 + 9, wc, 3.5, 4); Town.gable(B.lit, o, 21, 64, y0 + 9, 4.2, true, WR, wc, .5);
+      for (const x of [-5, 5]) { Town.box(B.lit, o, x, y0, -side * 32.06, 4.6, 6.4, .14, [.06, .06, .07]); Town.box(B.lit, o, x, y0 + 6.4, -side * 32.1, 5.2, .5, .25, [.4, .4, .42]); }
+      Town.box(B.lit, o, 0, y0 + 9, 0, 2.4, 1.2, 50, [.4, .42, .45]);
+      for (const zz of [-24, 24]) { const p = Town.P(o, 13.5, zz); B.lit.add(TPL.boxB, p[0], y0, p[1], .3, 14, .3, 0, 0, 0x555a60); B.emis.add(TPL.box, p[0], y0 + 14, p[1], 1.4, .4, 1.4, 0, 0, [1, .95, .8]); B.glow.push([p[0], y0 + 13.7, p[1], 7, 1, .95, .8]); }
+      const p = Town.P(o, -15, side * 10); B.build.add(TPL.boxB, p[0], y0, p[1], 6, 5, 9, L.hd, 0, [.75, .72, .66], 1, .5); B.lit.add(TPL.pyr, p[0], y0 + 5, p[1], 6.6, 2, 9.6, L.hd, 0, [.4, .25, .2]);
+    }
+    /* stabled diesels: one in the shed door, one waiting outside */
+    const rr = rng((Rail.seed ^ (z.zi * 7919)) >>> 0);
+    for (const [k, t] of [[-5, -27], [5, -64]]) {
+      const s = t2s(t); if (s < ch.s0 || s >= ch.s1) continue;
+      const Lc = buildFreightLoco(rr), a = ptAt(s, dp.u + k, {});
+      for (const az of Lc.axles) { const w = new THREE.Mesh(wheelGeo(.46), MAT.lit); w.position.set(0, .46, az); Lc.g.add(w); }
+      Lc.g.position.set(a.x, a.y, a.z); Lc.g.rotation.y = a.hd + (side > 0 ? Math.PI : 0); ch.group.add(Lc.g);
+    }
   },
   /* road along u at track position s0, following a height profile yf(u); markings, verges and street lamps */
   roadAcross(ch, B, s0, u0, u1, yf, o) {
@@ -2835,7 +2875,7 @@ const Stations = {
     if (Math.abs(dist) < 700) { if (Passengers.zone !== z) Passengers.spawnWaiting(z); } else if (Passengers.zone === z && Math.abs(dist) > 1100) Passengers.clear();
     const stz = Rail.stl(z), tol = clamp(stz.P - train.length / 2 + 15, 45, 140), at = Math.abs(dist) < tol && v < .35;
     if (this.state === 'cruise' && at) { this.state = 'open'; this.timer = 0; this.doorTarget = 1; this.did = { out: 0, inn: 0 };
-      { const w = Passengers.add(phys.s - dir * 9, 3.1, 'wait'); if (w) { w.work = true; w.stroll = false; w.pl = -2; const o = ptAt(phys.s - dir * 9, 0, {}); w.yaw = Math.atan2(o.x - w.x, o.z - w.z); } } Sound.chime(); Sound.speak('Станція ' + z.name + '. Потяг прибув.'); UI.banner('Станція ' + z.name + ' · платформ: ' + stz.pl.length + ' · довжина платформи ' + stz.P * 2 + ' м' + (train.length > stz.P * 2 ? ' — коротша за потяг, двері відчиняються лише біля платформи' : '')); Sound.bell(); this.served++;
+      { const ws = clamp(phys.s - dir * 9, z.c - stz.P + 4, z.c + stz.P - 4), w = Passengers.add(ws, 3.1, 'wait'); if (w) { w.work = true; w.stroll = false; w.pl = -2; const o = ptAt(ws, 0, {}); w.yaw = Math.atan2(o.x - w.x, o.z - w.z); } } Sound.chime(); Sound.speak('Станція ' + z.name + '. Потяг прибув.'); UI.banner('Станція ' + z.name + ' · платформ: ' + stz.pl.length + ' · довжина платформи ' + stz.P * 2 + ' м' + (train.length > stz.P * 2 ? ' — коротша за потяг, двері відчиняються лише біля платформи' : '')); Sound.bell(); this.served++;
       if (this.sched && this.sched.z === z) { const d = this.sched.due - this.jt, m = Math.floor(Math.abs(d) / 60), s = Math.floor(Math.abs(d) % 60); UI.banner('Станція ' + z.name + ' · ' + (d >= 0 ? 'раніше на ' : 'пізніше на ') + pad2(m) + ':' + pad2(s)); this.sched = null; } }
     if (this.state === 'open') {
       this.timer += dt;
@@ -4610,3 +4650,5 @@ function initUIOnly() {
 function engineBoot() { try { initEngine(); } catch (e) { $('load').textContent = 'Помилка запуску графіки: ' + e.message; console.error(e); } }
 
 </script>
+</body>
+</html>
