@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Manifest of the offline TEST build (testbuild/build-apk.sh): no ad SDK, no network permission.
+     The Google Play release is built from app/ with Gradle. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.endlessrails.game.test"
+    android:versionCode="20000"
+    android:versionName="2.0.0-test">
+    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="36" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-feature android:glEsVersion="0x00020000" android:required="true" />
+    <application
+        android:label="Endless Rails (test)"
+        android:icon="@mipmap/ic_launcher"
+        android:hardwareAccelerated="true"
+        android:largeHeap="true"
+        android:allowBackup="true"
+        android:theme="@style/AppTheme">
+        <activity
+            android:name="com.endlessrails.game.MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="fullUser"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode"
+            android:windowSoftInputMode="adjustNothing">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

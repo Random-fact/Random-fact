@@ -1,5 +1,11 @@
 build/
-assets/
+.gradle/
+app/build/
+local.properties
+keystore.properties
+*.jks
+*.keystore
 *.apk
+*.aab
 *.idsig
-release.keystore
+testbuild/build/
