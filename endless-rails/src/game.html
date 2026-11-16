@@ -183,7 +183,7 @@ button:disabled{opacity:.45;pointer-events:none}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:var(--sp2)}
 .cards .mode{border-radius:var(--r2);min-height:88px;position:relative;padding:12px 14px}
 .cards .mode.locked{opacity:.85}
-.cards .mode .lock{position:absolute;right:10px;top:10px;font-size:11px;color:var(--brass);font-family:var(--disp);letter-spacing:.06em}
+.cards .mode .lock{display:block;margin:0 0 4px;font-size:11px;color:var(--brass);font-family:var(--disp);letter-spacing:.06em}
 .cars{flex-wrap:wrap}
 .chips{display:flex;flex-wrap:wrap;gap:8px}.chips button{min-height:40px;padding:6px 12px;font-size:12px}
 .go{position:sticky;bottom:calc(-1 * var(--sp3));background:linear-gradient(180deg,transparent,var(--panel) 30%);padding:var(--sp3) 0 4px;display:flex;gap:var(--sp2);flex-wrap:wrap}
@@ -240,6 +240,15 @@ body.lessonon #evcard,body.menuopen #guide{opacity:0!important}
 @media (orientation:landscape) and (max-height:480px){#menu{grid-template-columns:minmax(190px,240px) 1fr}#menu h1{font-size:26px}#menu .tag{display:none}#menunav button{min-height:40px;padding:6px 10px}
   #lesson{top:calc(max(6px,var(--sat)) + 52px);max-height:52vh;width:min(480px,calc(100vw - 260px))}#guide{top:calc(max(6px,var(--sat)) + 44px);width:200px}}
 @media (prefers-reduced-motion:reduce){button,#evcard,#banner{transition:none}}
+/* "swap levers" setting: throttle on the right, brake on the left */
+body.swap #thr{grid-column:3;grid-row:1}body.swap #brk{grid-column:1;grid-row:1}body.swap #btns{grid-column:2;grid-row:1}
+/* small portrait phones: navigation becomes one horizontally scrolling row so the content gets the screen */
+@media (orientation:portrait) and (max-width:600px){#menu{gap:var(--sp2);grid-template-columns:minmax(0,1fr)}#menu .side,#menu .main{min-width:0}#menu h1{font-size:26px}#menu .tag{display:none}
+  #menunav{flex-direction:row;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;padding-bottom:6px;scrollbar-width:thin}
+  #menunav button{flex:none;min-height:40px;padding:6px 10px;font-size:12.5px;white-space:nowrap}#menu .main{padding:var(--sp2) var(--sp3)}}
+@media (orientation:portrait) and (max-height:640px){#menu h1{font-size:22px;margin:0}#menu .main h2{font-size:18px}#menu .main p.lead{font-size:12.5px;margin-bottom:var(--sp2)}}
+/* very low landscape screens: compact lesson panel that never reaches the control row */
+@media (orientation:landscape) and (max-height:380px){#lesson{max-height:calc(100vh - 150px);padding:8px 10px}#lesson p{font-size:11.5px;margin:3px 0;line-height:1.35}#lesson .lbtn button{min-height:32px;padding:4px 10px}#lesson .lt{font-size:12px}}
 </style>
 </head>
 <body>
@@ -542,6 +551,9 @@ const Stats = {
   stop(err, grade) { const s = Profile.d.stats; s.graded++; s.errSum += Math.abs(err); if (grade === 'perfect') s.perfect++; Profile.touch(); },
   event(id) { const s = Profile.d.stats; s.events++; if (id === 'rocket') s.rocket++; if (id === 'volcano') s.volcano++; if (id === 'fireball' || id === 'meteorite') s.meteor++; Profile.touch(); }
 };
+
+/* short haptic pulses (setting "Vibration"): native vibrator in the Android app, Vibration API in browsers */
+function haptic(ms) { if (!SettingsManager.v.vibe) return; try { if (window.AndroidApp && AndroidApp.vibrate) AndroidApp.vibrate(ms | 0); else if (navigator.vibrate) navigator.vibrate(ms | 0); } catch (e) { } }
 
 /* ===== Input ===== */
 const InputManager = {
@@ -3331,16 +3343,18 @@ const StationLife = {
 /* ===== StationSystem: approach, stop, boarding, schedule ===== */
 const Stations = {
   zone: null, state: 'cruise', timer: 0, announced: new Set(), served: 0, info: { name: '—', dist: 0 }, sched: null, jt: 0, lastStop: -1, doorTarget: 0,
-  reset() { this.announced.clear(); this.state = 'cruise'; this.doorTarget = 0; this.zone = null; this.sched = null; },
+  reset() { this.announced.clear(); this.state = 'cruise'; this.doorTarget = 0; this.zone = null; this.sched = null; this.toGrade = null; },
   update(dt, phys, train, mode) {
     const dir = phys.dir, v = phys.v, mid = phys.s - dir * train.length / 2, z = Rail.nextStation(mid, dir), dist = (z.c - mid) * dir;
     this.zone = z; this.jt += dt; this.info.name = z.name; this.info.dist = dist;
     if (dist < 700 && dist > 0 && !this.announced.has('a' + z.zi + dir)) { this.announced.add('a' + z.zi + dir); Sound.chime(); Sound.speak(_T('Наступна станція {0}', z.name)); { const TW = Rail.town(z); UI.banner(_T('Станція {0}', z.name) + ' · ' + _T(CATS[Rail.cat(z)]) + ' · ' + _T(TW.kindName) + ', ' + (TW.pop >= 1000 ? _T('{0} тис.', Math.round(TW.pop / 1000)) : TW.pop) + ' · ' + fmtDist(dist)); } }
     if (Math.abs(dist) < 700) { if (Passengers.zone !== z) Passengers.spawnWaiting(z); } else if (Passengers.zone === z && Math.abs(dist) > 1100) Passengers.clear();
     const stz = Rail.stl(z), tol = clamp(stz.P - train.length / 2 + 15, 45, 140), at = Math.abs(dist) < tol && v < .35;
-    if (this.state === 'cruise' && at) { this.state = 'open'; this.timer = 0; this.doorTarget = 1; this.did = { out: 0, inn: 0 }; this.servedZ = z.zi; this.graded(z, phys, train, mode); Sound.doors(true);
+    if (this.state === 'cruise' && at) { this.state = 'open'; this.timer = 0; this.doorTarget = 1; this.did = { out: 0, inn: 0 }; this.servedZ = z.zi; this.toGrade = z; Sound.doors(true);
       { const ws = clamp(phys.s - dir * 9, z.c - stz.P + 4, z.c + stz.P - 4), w = Passengers.add(ws, 3.1, 'wait'); if (w) { w.work = true; w.stroll = false; w.pl = -2; const o = ptAt(ws, 0, {}); w.yaw = Math.atan2(o.x - w.x, o.z - w.z); } } Sound.chime(); Sound.speak(_T('Станція {0}. Потяг прибув.', z.name)); UI.banner(_T('Станція {0}', z.name) + ' · ' + _T('платформ: {0}', stz.pl.length) + ' · ' + _T('довжина платформи {0} м', stz.P * 2) + (train.length > stz.P * 2 ? ' — ' + _T('коротша за потяг, двері відчиняються лише біля платформи') : '')); Sound.bell(); this.served++;
       if (this.sched && this.sched.z === z) { const d = this.sched.due - this.jt, m = Math.floor(Math.abs(d) / 60), s = Math.floor(Math.abs(d) % 60); UI.banner(_T('Станція {0}', z.name) + ' · ' + _T(d >= 0 ? 'раніше на {0}' : 'пізніше на {0}', pad2(m) + ':' + pad2(s))); this.sched = null; } }
+    /* the stop is graded once the train really stands still (not when the doors may first open at walking pace) */
+    if (this.toGrade && phys.v < .05) { this.graded(this.toGrade, phys, train, mode); this.toGrade = null; }
     if (this.state === 'open') {
       this.timer += dt;
       if (!this.did.out && this.timer > 1.5) { this.did.out = 1; Passengers.alight(train, 6 + Math.floor(Math.random() * (z.sk === 'city' ? 18 : z.sk === 'town' ? 10 : 4)) + Math.floor(stz.P / 40), z); }
@@ -3360,7 +3374,7 @@ const Stations = {
     if (Tutor.on || (mode !== 'schedule' && mode !== 'challenge')) return;
     const tgt = StopEval.target(z, phys.dir, train.length), err = (phys.s - tgt) * phys.dir, gr = StopEval.grade(err, z, train.length), g = StopEval.GR[gr];
     Stats.stop(err, gr); if (mode === 'challenge') Challenge.stop(err, gr, z);
-    UI.toast(gr === 'perfect' ? '🎯' : gr === 'missed' ? '⛔' : '🚉', _T(g[0]) + ' · ' + (err > 0 ? '+' : '') + _T('{0} м', fmtN(err, 1)), StopEval.explain(err), g[1]); Sound.uiTone(gr === 'perfect' || gr === 'excellent' ? 2 : gr === 'missed' ? 3 : 1);
+    UI.toast(gr === 'perfect' ? '🎯' : gr === 'missed' ? '⛔' : '🚉', _T(g[0]) + ' · ' + (err > 0 ? '+' : '') + _T('{0} м', fmtN(err, 1)), StopEval.explain(err), g[1]); Sound.uiTone(gr === 'perfect' || gr === 'excellent' ? 2 : gr === 'missed' ? 3 : 1); haptic(gr === 'perfect' ? 40 : 15);
   },
   /* scheduled running time to the next station: the speed profile allowed by the limits (accelerate, cruise, brake),
      a 7% recovery margin and the dwell; with stations 10–100 km apart this gives realistic timetables for each train */
@@ -3374,7 +3388,8 @@ const Stations = {
     return t;
   },
   nextSched(phys, mode) {
-    if (mode !== 'schedule') { this.sched = null; return; } const tr = G.train, mid = phys.s - phys.dir * tr.length / 2, z = Rail.nextStation(mid + phys.dir * 120, phys.dir);
+    if (mode !== 'schedule') { this.sched = null; return; } const tr = G.train, mid = phys.s - phys.dir * tr.length / 2; let z = Rail.nextStation(mid, phys.dir);
+    if ((z.c - mid) * phys.dir < 400) z = Rail.zone(Rail.stnFrom(z.zi, phys.dir, 1)); /* standing at (or just leaving) a station: the timetable is for the next one */
     const t = this.runTime(mid, z.c, phys.dir, tr.def); this.sched = { z, due: this.jt + t * 1.07 + 30, run: t };
   },
   line(mode) { if (mode === 'challenge') return _T('Випробування: {0} / 10 · {1} очок', Challenge.n, Challenge.score); if (mode !== 'schedule' || !this.sched) return ''; const d = this.sched.due - this.jt; return _T('Розклад: {0}', (d < 0 ? '−' : '') + fmtTime(Math.abs(d))); }
@@ -3646,7 +3661,7 @@ const Limits = {
     else if (G.atpBrake > 0 && (p.v < lim.allowed - .5 && kmh < curV)) { G.atpBrake = 0; G.atpCut = false; }
     else if (mode === 'off' || !ov) { if (p.v < lim.allowed - .5) { G.atpBrake = 0; G.atpCut = false; } }
     if (G.atpBrake > 0 && st !== 'brake' && mode !== 'auto') { G.atpBrake = 0; G.atpCut = false; }
-    if (st !== lim.atp) { lim.atp = st; if (st === 'brake') UI.banner(_T('АЗШ: автоматичне гальмування. Перевищено ліміт {0} км/год', Math.round(curV))); }
+    if (st !== lim.atp) { lim.atp = st; if (st === 'brake') { UI.banner(_T('АЗШ: автоматичне гальмування. Перевищено ліміт {0} км/год', Math.round(curV))); haptic(60); } else if (st === 'warn') haptic(25); }
     if (st !== 'ok') { this.beepT -= dt; if (this.beepT <= 0) { this.beepT = st === 'brake' ? 1 : 1.6; Sound.beep(1); } } else this.beepT = 0;
     /* live signal lamps for the signals around the train */
     const c = Math.floor(p.s / SIGSP);
@@ -5085,7 +5100,7 @@ const UI = {
       case 'lights': G.lights = !G.lights; this.mark('lights', G.lights); this.banner(G.lights ? 'Фари увімкнено' : 'Фари вимкнено'); break;
       case 'wipers': G.wipers = !G.wipers; this.mark('wipers', G.wipers); break;
       case 'cam': CamMgr.next(); break;
-      case 'emerg': Tutor.flags.emerg = 1; if (G.phys.emerg) { G.phys.emerg = false; } else { G.phys.emerg = true; G.thrT = 0; G.cruise = false; this.sync(); this.banner('ЕКСТРЕНЕ ГАЛЬМУВАННЯ'); } this.mark('emerg', G.phys.emerg); break;
+      case 'emerg': Tutor.flags.emerg = 1; if (G.phys.emerg) { G.phys.emerg = false; } else { G.phys.emerg = true; G.thrT = 0; G.cruise = false; this.sync(); this.banner('ЕКСТРЕНЕ ГАЛЬМУВАННЯ'); haptic(90); } this.mark('emerg', G.phys.emerg); break;
       case 'more': $('more').classList.toggle('open'); if ($('more').classList.contains('open')) Dev.show(false); document.body.classList.toggle('menuopen', $('more').classList.contains('open')); break;
       case 'rev': G.reverse(); break;
       case 'cabin': G.cabinLight = !G.cabinLight; this.mark('cabin', G.cabinLight); break;
@@ -5183,7 +5198,7 @@ const Menu = {
     const sv = SaveSystem.read(); if (sv) startGame({ save: sv });
   },
   h(m, t, lead) { m.appendChild(el('h2', null, _T(t))); if (lead) m.appendChild(el('p', 'lead', _T(lead))); },
-  lockTag(c) { const t = el('span', 'lock', '🔒 ' + _T('Додатково')); c.appendChild(t); c.classList.add('locked'); },
+  lockTag(c) { const t = el('span', 'lock', '🔒 ' + _T('Додатково')); c.insertBefore(t, c.firstChild); c.classList.add('locked'); },
   /* ---------- new journey ---------- */
   s_journey(m) {
     const P = this.pick || (this.pick = { mode: SettingsManager.v.mode || 'free', train: SettingsManager.v.train, layout: SettingsManager.v.layout || 'dense' });
@@ -5255,7 +5270,7 @@ const Menu = {
     for (const e of EXTRAS) {
       const row = el('div', 'xi'), info = el('div'); row.appendChild(el('div', 'ic', e.ic)); info.appendChild(el('b', null, _T(e.name))); info.appendChild(el('span', null, _T(e.desc))); row.appendChild(info);
       if (Unlocks.ok(e.id)) row.appendChild(el('div', 'ok', '✓ ' + _T(Ads.enabled() ? 'Відкрито' : 'Доступно')));
-      else { const b = el('button', 'pri', '▶ ' + _T('Відкрити за перегляд реклами')); b.onclick = () => this.offer(e); row.appendChild(b); }
+      else { const b = el('button', null, '▶ ' + _T('Відкрити за перегляд реклами')); b.onclick = () => this.offer(e); row.appendChild(b); }
       X.appendChild(row);
     }
   },
@@ -5265,7 +5280,7 @@ const Menu = {
     if (!e) return; Sound.uiTone(0);
     if (!Ads.enabled() || Unlocks.ok(e.id)) { this.scr = 'extras'; this.render(); return; }
     this.dialog(e.ic, _T(e.name), _T(e.desc) + '\n\n' + _T('Щоб відкрити назавжди, перегляньте коротке рекламне відео. Винагорода нараховується лише після повного перегляду.'), [[_T('Переглянути рекламу'), () => {
-      this.dialog('⏳', _T('Завантаження реклами…'), '', []);
+      this.dialog('⏳', _T('Завантаження реклами…'), '', [[_T('Скасувати'), () => { Ads.pending = null; Ads.resume(); }]]);
       Ads.watch(e, (ok, msg) => {
         if (ok) { Sound.uiTone(2); this.dialog('✓', _T('Відкрито: {0}', _T(e.name)), _T('Дякуємо! Вміст відкрито назавжди.'), [[_T('Чудово'), null, 1]]); }
         else { Sound.uiTone(3); this.dialog('ℹ', _T('Вміст не відкрито'), msg || _T('Реклама зараз недоступна. Перевірте з’єднання та спробуйте пізніше.'), [[_T('Зрозуміло'), null, 1]]); }
@@ -5468,7 +5483,7 @@ function startGame(o) {
       if (G.mode !== 'tutorial' && !Unlocks.mode(G.mode)) G.mode = 'free';
       if (G.mode === 'tutorial') Tutor.saveP();
       G.setTrain(SettingsManager.v.train, true);
-      const lay = save ? (save.layout || 'dense') : G.mode === 'tutorial' ? 'sparse' : (o.layout || 'dense');
+      const lay = save ? (save.layout || 'dense') : ['tutorial', 'schedule', 'challenge'].includes(G.mode) ? 'sparse' : (o.layout || 'dense');
       resetWorld(save ? save.seed : G.mode === 'tutorial' ? 9100 + (o.lesson || 0) * 17 : ((Math.random() * 2e9) | 0) + 1, save && save.rt, lay);
       Object.assign(p, { v: 0, thrT: 0, throttle: 0, brake: 0, emerg: false, p: 5, acc: 0, dist: 0 });
       G.thrT = G.brkT = 0; G.lights = false; G.wipers = false; G.cruise = false; G.paused = false; G.t = 0; Stations.jt = 0; Stations.served = 0; G.revT = 0; G.fadeRev = 0; G.freezeTime = false; Challenge.reset();
