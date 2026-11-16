@@ -3551,8 +3551,8 @@ const Tutor = {
   next() { const s = this.steps[this.si]; if (s && s.done) s.done(); this.si++; Sound.uiTone && Sound.uiTone(1); if (this.si >= this.steps.length) this.finish(); else this.enter(); },
   retry() { this.si = Math.max(0, this.si - 2); this.enter(); },
   finish() {
-    const L = this.LESSONS[this.li], order = ['missed', 'poor', 'good', 'excellent', 'perfect'], best = this.res.length ? this.res.reduce((a, b) => order.indexOf(a) <= order.indexOf(b) ? a : b) : 'perfect';
-    const prev = Profile.d.lessons[L.id], keep = prev && prev.best && order.indexOf(prev.best) > order.indexOf(best) ? prev.best : best;
+    const L = this.LESSONS[this.li], order = ['missed', 'poor', 'good', 'excellent', 'perfect'], best = this.res.length ? this.res.reduce((a, b) => order.indexOf(a) <= order.indexOf(b) ? a : b) : null;
+    const prev = Profile.d.lessons[L.id], keep = prev && prev.best && (!best || order.indexOf(prev.best) > order.indexOf(best)) ? prev.best : best;
     Profile.d.lessons[L.id] = { done: true, best: keep, at: Date.now() }; Profile.save(true); Achievements.check();
     this.guide = false; StopMark.hide(); this.si = this.steps.length; this.render(true);
   },
