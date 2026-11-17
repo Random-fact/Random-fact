@@ -276,7 +276,7 @@ body.swap #thr{grid-column:3;grid-row:1}body.swap #brk{grid-column:1;grid-row:1}
 #sigtag em{font-style:normal}
 #jtag{margin-left:0;font-size:clamp(10px,1.5vmin,12px);padding:1px 6px}
 #fps{font-size:clamp(10px,1.5vmin,11.5px)}
-#evtag{position:static;max-width:100%;font-size:clamp(10.5px,1.6vmin,12px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#evtag{position:static;max-width:100%;font-size:clamp(10.5px,1.6vmin,12px);white-space:normal;line-height:1.25}
 #evtag:empty{display:none}
 #info{position:static;text-align:center;padding:4px 10px;max-width:100%}
 #info #clock{font-size:clamp(13px,2.5vmin,20px)}
@@ -292,7 +292,7 @@ body.devopen #banner{left:auto;max-width:min(100%,520px)}
   background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--brass);border-radius:var(--r2);padding:6px 8px 7px 10px;pointer-events:auto;overflow:hidden}
 #lesson.on{display:flex}
 #lesson .lh{display:flex;align-items:center;gap:8px;flex:none}
-#lesson .lt{flex:1;min-width:0;font:600 clamp(11.5px,1.9vmin,13.5px) var(--disp);letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#lesson .lt{flex:1;min-width:0;font:600 clamp(11.5px,1.9vmin,13.5px) var(--disp);letter-spacing:.04em;white-space:normal;overflow-wrap:anywhere;line-height:1.25}
 #lesson .lp{flex:none;font:600 11px var(--disp);color:var(--steel)}
 #lesson .lx{flex:none;min-height:28px;width:30px;padding:0;font-size:18px;line-height:1;border-radius:6px}
 #lesson .lb{flex:0 1 auto;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch}
@@ -337,9 +337,8 @@ body.devopen #banner{left:auto;max-width:min(100%,520px)}
 
 /* ===================== sheets & cards: fixed header with close button, only the content scrolls ===================== */
 #more.sheet,#dev.sheet{position:absolute;display:none;flex-direction:column;overflow:hidden;pointer-events:auto;z-index:22;background:rgba(10,14,20,.94);border:1px solid var(--line);border-radius:var(--r3);backdrop-filter:blur(10px);
-  top:max(8px,var(--sat));bottom:calc(var(--ctlm,150px) + 6px);right:calc(max(12px,var(--sar)) + 92px);left:auto;width:min(330px,40vw);max-height:none;min-height:0;padding:0}
+  top:max(8px,var(--sat));bottom:calc(var(--ctlh,150px) + 6px);right:max(8px,var(--sar));left:auto;width:min(330px,40vw);max-height:none;min-height:0;padding:0}
 #more.sheet.open,#dev.sheet.open{display:flex}
-#more.sheet{top:max(var(--sheett,8px),var(--sat))}
 #more{grid-template-columns:none;max-height:none;gap:0}
 #more .mh,#dev .dh{flex:none;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 8px 8px 14px;border-bottom:1px solid var(--line)}
 #more .mh b,#dev .dh b{font:600 14px var(--disp);letter-spacing:.12em}
@@ -358,40 +357,43 @@ body.devopen #banner{left:auto;max-width:min(100%,520px)}
 #dev .dq button,#dev .de button{min-height:30px;padding:3px 8px;font-size:11px;letter-spacing:.03em}
 #dev .dh button{min-height:32px;padding:4px 10px;font-size:11px}
 #hud #devtab{position:static;align-self:flex-end;pointer-events:auto;min-height:34px;padding:4px 10px;font-size:11px;z-index:21}
-body.menuopen #devtab{display:none!important}
-/* while a side sheet is open the HUD columns make room for it instead of being covered */
+body.menuopen #devtab,body.moreopen #devtab{display:none!important}
+/* landscape: a side sheet (in-game menu or events) stands at the right screen edge above the brake lever, and the HUD
+   columns make room for it instead of being covered */
 @media (orientation:landscape){
-  body.devopen #hud{padding-right:calc(min(290px,36vw) + max(12px,var(--sar)) + 100px);grid-template-columns:minmax(0,max-content) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
-  body.devopen #hudL{grid-column:1;grid-row:1}body.devopen #hudR{grid-column:1;grid-row:2;width:min(30vw,250px);max-height:none}body.devopen #hudC{grid-column:2;grid-row:1/3}
+  body.sideopen #hud{padding-right:calc(min(330px,40vw) + max(8px,var(--sar)) + 10px);grid-template-columns:minmax(0,max-content) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+  body.sideopen #hudL{grid-column:1;grid-row:1}body.sideopen #hudR{grid-column:1;grid-row:2;width:min(30vw,250px);max-height:none}body.sideopen #hudC{grid-column:2;grid-row:1/3}
+  /* the left column ends above the traction lever (measured); if a lesson fills it, it scrolls instead of overlapping */
+  body.sideopen #hudR{max-height:var(--hudrmax,none);overflow-y:auto;overscroll-behavior:contain;pointer-events:auto;scrollbar-width:thin}
+  /* the station card becomes one line so the left column stays above the traction lever */
+  body.sideopen #stn{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;column-gap:8px;padding:3px 10px;text-align:left}
+  body.sideopen #stn div{white-space:normal}
 }
 /* narrow landscape: too little room for columns beside the sheet, so the HUD uses the compact portrait arrangement */
 @media (orientation:landscape) and (max-width:759px){
-  body.devopen #hud{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:none;grid-auto-rows:auto;row-gap:5px;column-gap:6px;align-content:start;
+  body.sideopen #hud{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:none;grid-auto-rows:max-content;row-gap:5px;column-gap:6px;align-content:start;
     grid-template-areas:"spd stn" "bp bp" "evt evt" "inf inf" "gd gd" "les les" "ban ban" "evc evc"}
-  body.devopen #hudL,body.devopen #hudC,body.devopen #hudR,body.devopen #speedcard{display:contents}
-  body.devopen #speedbox{grid-area:spd;background:var(--glass);border:1px solid var(--line);border-radius:var(--r2);padding:3px 8px;backdrop-filter:blur(6px);align-self:stretch}
-  body.devopen #spd{font-size:26px}
-  body.devopen #stn{grid-area:stn;align-self:stretch}
-  body.devopen #bp{grid-area:bp;background:var(--glass);border:1px solid var(--line);border-radius:var(--r2);padding:3px 8px;backdrop-filter:blur(6px);justify-content:flex-start}
-  body.devopen #evtag{grid-area:evt}
-  body.devopen #hud #info{grid-area:inf;display:flex;flex-wrap:wrap;justify-content:center;column-gap:8px;align-items:baseline;padding:2px 8px;justify-self:stretch}
-  body.devopen #info>div{white-space:nowrap}
-  body.devopen #guide{grid-area:gd}body.devopen #lesson{grid-area:les}body.devopen #banner{grid-area:ban;padding:4px 8px}body.devopen #evcard{grid-area:evc}
-  body.devopen #bp{font-size:11px}body.devopen #hud #info{font-size:11px}body.devopen #banner{font-size:12px;line-height:1.3}
-}
-/* the smallest landscape phones (320 dp tall, ~570 dp wide): the events sheet moves to the right edge and ends above the
-   brake lever, which gives the HUD rows the width they need to stay on one line each */
-@media (orientation:landscape) and (max-width:600px){
-  #dev.sheet{right:max(8px,var(--sar));bottom:calc(var(--ctlh,150px) + 6px);width:min(300px,40vw)}
-  body.devopen #hud{padding-right:calc(min(300px,40vw) + max(8px,var(--sar)) + 8px)}
+  body.sideopen #hudL,body.sideopen #hudC,body.sideopen #hudR,body.sideopen #speedcard{display:contents}
+  body.sideopen #speedbox{grid-area:spd;background:var(--glass);border:1px solid var(--line);border-radius:var(--r2);padding:3px 8px;backdrop-filter:blur(6px);align-self:stretch}
+  body.sideopen #spd{font-size:26px}
+  body.sideopen #stn{grid-area:stn;align-self:stretch}
+  body.sideopen #bp{grid-area:bp;background:var(--glass);border:1px solid var(--line);border-radius:var(--r2);padding:3px 8px;backdrop-filter:blur(6px);justify-content:flex-start}
+  body.sideopen #evtag{grid-area:evt}
+  body.sideopen #hud #info{grid-area:inf;display:flex;flex-wrap:wrap;justify-content:center;column-gap:8px;align-items:baseline;padding:2px 8px;justify-self:stretch}
+  body.sideopen #info>div{white-space:nowrap}
+  body.sideopen #guide{grid-area:gd}body.sideopen #lesson{grid-area:les}body.sideopen #banner{grid-area:ban;padding:4px 8px}body.sideopen #evcard{grid-area:evc}
+  body.sideopen #bp{font-size:11px}body.sideopen #hud #info{font-size:11px}body.sideopen #banner{font-size:12px;line-height:1.3}
+  /* the rows sit between the traction lever and the sheet (down to the button row); a lesson that needs more room scrolls */
+  body.sideopen #hud{padding-left:calc(max(10px,var(--sal)) + 84px);overflow-y:auto;overscroll-behavior:contain;pointer-events:auto;scrollbar-width:thin}
 }
 @media (orientation:portrait){
   #more.sheet,#dev.sheet{left:max(8px,var(--sal));right:max(8px,var(--sar));width:auto;top:auto;bottom:calc(var(--ctlh,40vh) + 6px);height:min(56vh,calc(100dvh - var(--ctlh,40vh) - 110px))}
   #dev.sheet{height:var(--devh,min(38vh,calc(100dvh - var(--ctlh,40vh) - 210px)))}
   #more.sheet{top:max(var(--sheett,0px),var(--sat));height:auto}
+  body.moreopen #hud{grid-template-rows:repeat(8,max-content);bottom:calc(100% - max(var(--sheett,0px),var(--sat)) + 4px);overflow-y:auto;overscroll-behavior:contain;pointer-events:auto;scrollbar-width:thin}
   #photo{left:max(10px,var(--sal))!important;right:max(10px,var(--sar))!important;max-width:none!important;bottom:max(10px,var(--sab))!important}
   body.photoMode #walkpad{top:42%!important;bottom:auto!important}
-  body.devopen #hud{bottom:calc(var(--ctlh,40vh) + var(--devh,min(38vh,calc(100dvh - var(--ctlh,40vh) - 210px))) + 12px)}
+  body.devopen #hud{bottom:calc(var(--ctlh,40vh) + var(--devh,min(38vh,calc(100dvh - var(--ctlh,40vh) - 210px))) + 12px);grid-template-rows:repeat(8,max-content);overflow-y:auto;overscroll-behavior:contain;pointer-events:auto;scrollbar-width:thin}
   #hud #devtab{position:fixed;right:max(8px,var(--sar));top:auto;bottom:calc(var(--ctlh,40vh) + 8px)}
 }
 /* overlay cards: header + scrolling body + fixed footer */
@@ -1169,6 +1171,7 @@ function initMaterials() {
   MAT.water = new THREE.MeshPhongMaterial({ color: 0x2b6a88, specular: 0xaabbcc, shininess: 70, transparent: true, opacity: .82, depthWrite: false });
   MAT.lit = new THREE.MeshLambertMaterial({ vertexColors: true });
   MAT.cabSkin = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.BackSide }); /* cab / nose inner shell, seen from inside only */
+  MAT.cabGlass = new THREE.MeshBasicMaterial({ color: 0xa9c6d8, transparent: true, opacity: .075, depthWrite: false, side: THREE.DoubleSide }); /* the single glass layer of each cab window */
   MAT.build = new THREE.MeshLambertMaterial({ vertexColors: true, map: wt, emissive: 0xffffff, emissiveMap: we, emissiveIntensity: 0 });
   MAT.emis = new THREE.MeshBasicMaterial({ vertexColors: true });
   MAT.lamp = new THREE.MeshBasicMaterial({ color: 0x554a30 });
@@ -2506,6 +2509,17 @@ function addBogie(b, sh, bz, wb, L, axles, o) {
 }
 const SM = { roofC: [.8, .82, .85], dark: [.035, .05, .08] };
 
+/* driver's seat: floor plate, column, cushion, reclined backrest with headrest, armrests. dir = +1 faces +z */
+function cabSeat(B, x, y0, z, c, dir) {
+  const d = dir || 1, up = c.map(v => v * .55 + .05), dk = [.11, .11, .13], fr = [.22, .23, .25], t = .21, bh = .62, bz = z - d * .27;
+  B.aabb(x - .2, x + .2, y0, y0 + .04, z - .2, z + .2, dk); B.aabb(x - .05, x + .05, y0 + .04, y0 + .34, z - .05, z + .05, fr);
+  B.aabb(x - .24, x + .24, y0 + .34, y0 + .38, z - .24, z + .22, dk); B.aabb(x - .26, x + .26, y0 + .38, y0 + .48, z - .25, z + .24, up);
+  B.aabb(x - .25, x + .25, y0 + .47, y0 + .5, z + .17, z + .25, up.map(v => v * .85));
+  B.add(TPL.box, x, y0 + .48 + bh / 2 * Math.cos(t), bz - d * Math.sin(t) * bh / 2, .5, bh, .1, 0, d * t, up);
+  B.add(TPL.box, x, y0 + .48 + (bh + .12) * Math.cos(t), bz - d * Math.sin(t) * (bh + .12), .3, .18, .09, 0, d * t, up);
+  B.add(TPL.box, x, y0 + .48 + (bh + .02) * Math.cos(t), bz - d * Math.sin(t) * (bh + .02) - d * .01, .08, .06, .05, 0, d * t, fr);
+  for (const sg of [-1, 1]) { const ax = x + sg * .285; B.aabb(ax - .03, ax + .03, y0 + .64, y0 + .69, z - .22, z + .15, dk); B.aabb(ax - .015, ax + .015, y0 + .48, y0 + .64, z - .2, z - .16, dk); }
+}
 function buildLoco(opt) {
   const sh = new Builder(), cab = new Builder(), lens = new Builder(), g = new THREE.Group(), L = (opt && opt.liv) || LIV;
   const TOP = 4.0, RY = .45, BOT = .9, YS = TOP - RY, CT = 3.45;
@@ -2518,7 +2532,7 @@ function buildLoco(opt) {
   const sec = z => { const s = clamp((z - 8.2) / 1.8, 0, 1); return { hw: 1.5 * (1 - .17 * Math.pow(s, 2.2)), bot: BOT + .08 * s, top: TOP - .5 * Math.pow(s, 1.6), ry: RY * (1 - .25 * s), tum: .03, fr }; };
   const zset = new Set([-10, 8.2, 8.5, 8.8, 9.1, 9.4, 9.7, 10, 6.4, 9.3]); for (let k = 0; ; k++) { const a = -9 + k * 2.2; if (a > 3.5) break; zset.add(+a.toFixed(3)); zset.add(+(a + 1.7).toFixed(3)); }
   const zs = [...zset].sort((a, b) => a - b), WHT = L.loco, BLU = L.teal, DK = SM.dark;
-  const isWin = (z, y) => (y > 2.15 && y < 3.3 && z > -9 && z < 3.6 && ((z + 9) % 2.2) < 1.7) || (y > 2.25 && y < 3.35 && z > 6.4 && z < 9.3) || (z > 9.3 && y > 2.0 && y < 3.4);
+  const isWin = (z, y) => (y > 2.15 && y < 3.3 && z > -9 && z < 3.6 && ((z + 9) % 2.2) < 1.7) || (y > 2.25 && y < 3.35 && z > 6.4 && z < 9.1) || (z > 9.4 && y > 2.0 && y < 3.4);
   const col = (z, y, x, r) => { if (y > r.ys + r.ry * .55) return SM.roofC; if (isWin(z, y)) return DK; if (y < 1.75) return BLU; if (y > 1.9 && y < 1.98) return BLU; return WHT; };
   Geo.hull(sh, { zs, sec, col });
   const c0 = sec(10), cf = (z, y) => (y > 2.0 && y < 3.4) ? DK : y < 1.75 ? BLU : (y > 1.9 && y < 1.98) ? BLU : WHT;
@@ -2532,31 +2546,39 @@ function buildLoco(opt) {
      out are the real windows. Screen-left in the cab is local +x; the driver sits on the right (local -x). */
   const ext = !!(opt && opt.ext), CZ = 4.9, FZ = 9.965;
   const inSec = z => { const r = sec(z); return Object.assign({}, r, { hw: r.hw - .03, top: r.top - .03, bot: r.bot + .03, ry: Math.max(.1, r.ry - .03) }); };
-  const PANES = [{ x0: .07, x1: 1.0, y0: 2.12, y1: 3.24 }, { x0: -1.0, x1: -.07, y0: 2.12, y1: 3.24 }];
+  const PANES = [{ x0: -1.15, x1: 1.15, y0: 2.12, y1: 3.24 }];  /* one panoramic pane; its ends meet the wrap-round corner glass */
   if (!ext) {
-    const skin = new Builder(), zsi = [...new Set(zs.filter(z => z >= CZ && z <= FZ).concat([CZ, 6.5, 9.25, 9.4, FZ]))].sort((a, b) => a - b);
-    const sideWin = (z, y) => (z > 6.5 && z < 9.25 && y > 2.2 && y < 3.28) || (z > 9.4 && z < FZ && y > 2.12 && y < 3.24);
-    Geo.hull(skin, { zs: zsi, sec: inSec, skip: (z, y) => sideWin(z, y),
+    const skin = new Builder(), tint = new Builder(), zsi = [...new Set(zs.filter(z => z >= CZ && z <= FZ).concat([CZ, 6.5, 9.1, 9.4, FZ]))].sort((a, b) => a - b);
+    const sideWin = (z, y) => (z > 6.5 && z < 9.1 && y > 2.2 && y < 3.28) || (z > 9.4 && z < FZ && y > 2.12 && y < 3.24);
+    Geo.hull(skin, { zs: zsi, sec: inSec, skip: (z, y) => sideWin(z, y), glass: tint, inset: .03,
       col: (z, y, x, r) => y < 2.2 ? [.26, .28, .31] : y > r.ys + r.ry * .3 ? [.74, .73, .69] : [.6, .59, .55] });
     { const ir = zsi.map(z => Geo.ring(inSec(z), []).pts[0]), dn = [0, -1, 0];
       for (let i = 0; i < zsi.length - 1; i++) { const a = ir[i], b = ir[i + 1]; Geo.quad(skin, [a[0], a[1], zsi[i]], [-a[0], a[1], zsi[i]], [-b[0], b[1], zsi[i + 1]], [b[0], b[1], zsi[i + 1]], dn, dn, dn, dn, [.2, .2, .22]); } }
     g.add(skin.build(MAT.cabSkin));
-    /* front wall: windscreen panes with a centre pillar, rubber gaskets around every window */
+    { const zg = FZ + .006; for (const p of PANES) Geo.quad(tint, [p.x0, p.y0, zg], [p.x1, p.y0, zg], [p.x1, p.y1, zg], [p.x0, p.y1, zg], [0, 0, -1], [0, 0, -1], [0, 0, -1], [0, 0, -1], [1, 1, 1]); }
+    { const tm = tint.build(MAT.cabGlass); if (tm) { tm.renderOrder = 5; g.add(tm); } }
+    /* front wall: the panoramic windscreen, rubber gaskets around every window */
     Geo.capHoles(cab, FZ, inSec(FZ), PANES, (y) => y < 2.12 ? [.26, .28, .31] : y > 3.24 ? [.7, .69, .65] : [.58, .57, .53], -1);
     const GK = [.07, .07, .08], gk = (x0, x1, y0, y1, z) => cab.aabb(x0, x1, y0, y1, z - .012, z, GK);
     for (const p of PANES) { gk(p.x0 - .03, p.x1 + .03, p.y0 - .03, p.y0, FZ); gk(p.x0 - .03, p.x1 + .03, p.y1, p.y1 + .03, FZ); gk(p.x0 - .03, p.x0, p.y0, p.y1, FZ); gk(p.x1, p.x1 + .03, p.y0, p.y1, FZ); }
     /* side- and corner-window gaskets following the curved wall */
     const wx = (z, y) => Geo.xAt(inSec(z), y) - .012;
-    for (const sg of [-1, 1]) for (const [z0, z1, y0, y1] of [[6.5, 9.25, 2.2, 3.28], [9.4, FZ - .01, 2.12, 3.24]]) {
+    for (const sg of [-1, 1]) for (const [z0, z1, y0, y1, mids] of [[6.5, 9.1, 2.2, 3.28, [7.8]], [9.4, FZ - .01, 2.12, 3.24, []]]) {
       const N = Math.max(2, Math.ceil((z1 - z0) / .5));
       for (let i = 0; i < N; i++) { const za = z0 + (z1 - z0) * i / N, zb = z0 + (z1 - z0) * (i + 1) / N, zm = (za + zb) / 2;
         for (const y of [y0 - .02, y1 + .02]) { const x = wx(zm, y); cab.aabb(Math.min(sg * x, sg * (x - .02)), Math.max(sg * x, sg * (x - .02)), y - .02, y + .02, za, zb, GK); } }
-      for (const z of [z0, z1]) { const x = wx(z, (y0 + y1) / 2); cab.aabb(Math.min(sg * x, sg * (x - .02)), Math.max(sg * x, sg * (x - .02)), y0 - .02, y1 + .02, z - .025, z + .025, GK); }
+      for (const z of [z0, z1, ...mids]) { const x = wx(z, (y0 + y1) / 2); cab.aabb(Math.min(sg * x, sg * (x - .02)), Math.max(sg * x, sg * (x - .02)), y0 - .02, y1 + .02, z - .025, z + .025, GK); }
     }
+    /* A-pillars: a padded trim on the inside between the side window and the corner glass */
+    for (const sg of [-1, 1]) for (let i = 0; i < 3; i++) { const za = 9.1 + i * .1, zb = za + .1, x = wx((za + zb) / 2, 2.7); cab.aabb(Math.min(sg * x, sg * (x - .035)), Math.max(sg * x, sg * (x - .035)), 2.14, 3.28, za, zb, [.3, .31, .34]); }
     /* floor, rear wall with the door to the engine room */
     cab.aabb(-1.36, 1.36, 1.4, 1.5, CZ, FZ, [.15, .15, .17]); cab.aabb(-1.2, 1.2, 1.5, 1.51, 6.2, 9.5, [.21, .21, .23]);
-    cab.aabb(-1.45, -.5, 1.5, 3.55, CZ, CZ + .08, [.55, .54, .5]); cab.aabb(.5, 1.45, 1.5, 3.55, CZ, CZ + .08, [.55, .54, .5]); cab.aabb(-.5, .5, 3.08, 3.55, CZ, CZ + .08, [.55, .54, .5]);
-    cab.aabb(-.5, .5, 1.5, 3.08, CZ - .06, CZ, [.2, .22, .26]); cab.aabb(.32, .38, 2.2, 2.3, CZ + .02, CZ + .08, [.7, .7, .72]);
+    { const RW = CZ + .06; Geo.capHoles(cab, RW, inSec(RW), [{ x0: -.45, x1: .45, y0: 1.5, y1: 3.1 }], y => y < 1.62 ? [.2, .2, .22] : y > 3.5 ? [.72, .71, .67] : [.55, .54, .5], 1);
+      cab.aabb(-.45, .45, 1.5, 3.1, RW - .06, RW - .03, [.34, .36, .4]); cab.aabb(-.24, .24, 2.42, 2.88, RW - .03, RW - .024, [.08, .1, .13]);
+      cab.aabb(-.49, -.45, 1.5, 3.14, RW - .03, RW + .015, GK); cab.aabb(.45, .49, 1.5, 3.14, RW - .03, RW + .015, GK); cab.aabb(-.49, .49, 3.1, 3.14, RW - .03, RW + .015, GK);
+      cab.aabb(.3, .38, 2.2, 2.25, RW - .03, RW + .03, [.72, .72, .74]); }
+    for (const sg of [-1, 1]) { const x = wx(5.55, 2.4); cab.aabb(Math.min(sg * x, sg * (x - .025)), Math.max(sg * x, sg * (x - .025)), 1.5, 3.25, 5.0, 6.1, [.45, .46, .46]);
+      cab.aabb(Math.min(sg * (x - .025), sg * (x - .06)), Math.max(sg * (x - .025), sg * (x - .06)), 2.15, 2.21, 5.15, 5.35, [.72, .72, .74]); }
     /* desk along the front wall, instrument hood under the windscreen (its top edge is the window sill), side consoles */
     const DESK = [.17, .18, .21], HOOD = [.12, .13, .15];
     cab.aabb(-1.32, 1.32, 1.5, 1.9, 8.95, FZ, DESK); cab.aabb(-1.34, 1.34, 1.9, 1.95, 8.9, FZ, [.24, .25, .28]);
@@ -2568,7 +2590,7 @@ function buildLoco(opt) {
     /* lever pedestals: power controller on the driver's left, brake valve on his right */
     cab.aabb(.06, .3, 1.95, 2.1, 8.86, 9.12, [.2, .21, .24]); cab.aabb(-1.3, -1.06, 1.95, 2.1, 8.86, 9.12, [.2, .21, .24]);
     /* seats (behind the eye), ceiling light, handrail */
-    for (const [x, c] of [[-.5, L.seat1], [.62, L.seat1]]) { cab.aabb(x - .3, x + .3, 1.5, 1.95, 7.2, 7.75, [.15, .15, .17]); cab.aabb(x - .28, x + .28, 1.95, 2.08, 7.22, 7.73, c); cab.aabb(x - .28, x + .28, 2.08, 2.95, 7.12, 7.24, c); }
+    cabSeat(cab, -.5, 1.5, 7.5, L.seat1, 1); cabSeat(cab, .62, 1.5, 7.5, L.seat1, 1);
     cab.aabb(-.6, .6, 3.62, 3.66, 7.4, 8.0, [.95, .93, .86]); cab.aabb(-.02, .02, 3.5, 3.62, 6.0, 9.0, [.6, .62, .64]);
   }
   /* exterior details: fuel tank and reservoirs, pilot with snowplough, cab door outlines, steps, grab rails, roof horns and exhaust stacks */
@@ -2595,8 +2617,8 @@ function buildLoco(opt) {
     m.lookAt(m.position.x, m.position.y + Math.cos(th), m.position.z - Math.sin(th)); g.add(m); return { cv, tex };
   };
   const P1 = face(512, 256, .98, .39, -.43, 9.18, 1.93, 9.6, 2.12, .5), P2 = face(256, 128, .66, .3, .78, 9.3, 1.93, 9.62, 2.08, .5);
-  /* windscreen glass for rain (two flat panes in the front wall; frame: origin at the screen-left bottom corner) */
-  const glassSpec = { tris: [], O: [1.0, 2.12, FZ + .012], ex: [-1, 0, 0], ey: [0, 1, 0], W: 2.0, H: 1.12 };
+  /* windscreen glass for rain (the flat panoramic pane in the front wall; frame: origin at the screen-left bottom corner) */
+  const glassSpec = { tris: [], O: [1.15, 2.12, FZ + .012], ex: [-1, 0, 0], ey: [0, 1, 0], W: 2.3, H: 1.12 };
   for (const p of PANES) { const z = FZ + .012, a = [p.x0, p.y0, z], b = [p.x1, p.y0, z], c = [p.x1, p.y1, z], d = [p.x0, p.y1, z]; glassSpec.tris.push(a, b, c, a, c, d); }
   const cv = P1.cv, tex = P1.tex, cv2 = P2.cv, tex2 = P2.tex;
   const mkLever = (x, col) => {
@@ -2605,9 +2627,9 @@ function buildLoco(opt) {
     const kn = new THREE.Mesh(new THREE.SphereGeometry(.05, 10, 8), new THREE.MeshLambertMaterial({ color: col })); kn.position.y = .26; p.add(kn); g.add(p); return p;
   };
   const thrL = mkLever(.18, 0x111111), brkL = mkLever(-1.18, 0xb02a20);
-  /* parallel wipers: pivots at the bottom inner corners of the panes, parked along the bottom edge */
+  /* parallel wipers: pivots at the bottom of each half of the pane, parked along the bottom edge */
   const wipers = [];
-  for (const x of [.1, -.97]) { const p = new THREE.Group(); p.position.set(x, 2.15, 10.03); const a = new THREE.Mesh(new THREE.BoxGeometry(.022, 1.08, .018), new THREE.MeshLambertMaterial({ color: 0x101010 })); a.position.y = .54; p.add(a); g.add(p); wipers.push(p); }
+  for (const x of [.02, -1.1]) { const p = new THREE.Group(); p.position.set(x, 2.15, 10.03); const a = new THREE.Mesh(new THREE.BoxGeometry(.022, 1.08, .018), new THREE.MeshLambertMaterial({ color: 0x101010 })); a.position.y = .54; p.add(a); g.add(p); wipers.push(p); }
   const spot = new THREE.SpotLight(0xfff0d0, 0, 380, .38, .55, 1.1); spot.position.set(0, 2.4, 10); const tg = new THREE.Object3D(); tg.position.set(0, 1.2, 60); g.add(tg); spot.target = tg; g.add(spot);
   return { g, cv, tex, cv2, tex2, thrL, brkL, wipers, wiperLen: 1.08, glassSpec, spot, cabMesh, axles, heads: [[-1.0, 1.45, 10.1], [1.0, 1.45, 10.1], [0, 3.38, 10.1]], beam: [0, 1.45, 10.1] };
 }
@@ -2861,13 +2883,13 @@ function buildHSLoco(opt) {
   for (let k = 0; ; k++) { const a = -11.1 + k * 2.3; if (a > -2.6) break; zset.add(+a.toFixed(3)); zset.add(+(a + 1.2).toFixed(3)); }
   for (let i = 1; i <= 26; i++) { const t = i / 26; zset.add(+(N0 + (N1 - N0) * (t < .3 ? t * t / .3 : t)).toFixed(3)); }
   for (let i = 1; i <= 6; i++) zset.add(+(N1 + .55 * (1 - Math.pow(1 - i / 6, 1.6))).toFixed(3));
-  zset.add(N0 + .05 * (N1 - N0)); zset.add(N0 + .2 * (N1 - N0)); zset.add(N0 + .205 * (N1 - N0)); zset.add(-1.9); zset.add(-.4); zset.add(N0 - .25); zset.add(N0 - .06); zset.add(N1 - .62); zset.add(N1 - .5);
+  zset.add(N0 + .05 * (N1 - N0)); zset.add(N0 + .2 * (N1 - N0)); zset.add(N0 + .205 * (N1 - N0)); zset.add(-1.9); zset.add(-.4); zset.add(.2); zset.add(N0 - .25); zset.add(N0 - .06); zset.add(N1 - .62); zset.add(N1 - .5);
   const zs = [...zset].sort((a, b) => a - b);
-  const isWin = (z, y) => y > 2.0 && y < 2.95 && ((z > -11.1 && z < -2.6 && ((z + 11.1) % 2.3) < 1.2) || (z > -.4 && z < N0 - .25));
+  const isWin = (z, y) => y > 2.0 && y < 2.95 && ((z > -11.1 && z < -2.6 && ((z + 11.1) % 2.3) < 1.2) || (z > .2 && z < N0 - .25));  /* cab side window beside the driver */
   const col = (z, y, x, r) => {
     const t = clamp((z - N0) / (N1 - N0), 0, 1), roof = y > r.ys + r.ry * .55 && t < .05;
     if (z > N0) {
-      if (t < .205 && y > r.ys + r.ry * .05 && Math.abs(x) < r.rx * .92) return DK;               /* wrap-around windscreen */
+      if (t < .205 && y > r.ys + r.ry * .05 && Math.abs(x) < r.rx * .92 && (z > N0 + 1.0 || y < 3.3)) return DK; /* wrap-around windscreen under a roof header */
       if (z > N1 - .62 && z < N1 - .5) return [.62, .64, .67];                                    /* coupler-cover split line */
       const f = (y - r.bot) / Math.max(.01, r.ys - r.bot), q = HSN.FR;                              /* bands follow the nose surface */
       if (f < q[1] && y < r.ys) return BLU; if (f > q[2] && f < q[3] && y < r.ys) return ACC; return roof ? L.roof : WHT;
@@ -2902,12 +2924,12 @@ function buildHSLoco(opt) {
      except the windscreen and the side windows — nothing can be seen through the train body any more.
      Screen-left in the cab is local +x (the camera looks along +z). */
   const CZ0 = -.5, ZW = N0 + .205 * (N1 - N0), F = [.15, .15, .17], DKc = [.09, .1, .12], WALL = [.5, .52, .55];
-  { const skin = new Builder(), zsi = zs.filter(z => z >= CZ0 - .001);
+  { const skin = new Builder(), tint = new Builder(), zsi = zs.filter(z => z >= CZ0 - .001);
     if (zsi[0] > CZ0) zsi.unshift(CZ0);
     const inSec = z => { const r = hsSec(z); return Object.assign({}, r, { hw: r.hw - .035, top: r.top - .035, bot: r.bot + .035, ry: Math.max(.1, r.ry - .035) }); };
-    const winWs = (z, y, x, r) => { const t = clamp((z - N0) / (N1 - N0), 0, 1); return z > N0 - .005 && t < .205 && y > r.ys + r.ry * .05 && Math.abs(x) < r.rx * .92 && (z > N0 + .7 || y < 3.3); }; /* roof header over the driver's head */
-    const winSide = (z, y) => z > -.4 && z < N0 - .25 && y > 2.15 && y < 3.35;
-    Geo.hull(skin, { zs: zsi, sec: inSec, skip: (z, y, x, r) => winWs(z, y, x, r) || winSide(z, y),
+    const winWs = (z, y, x, r) => { const t = clamp((z - N0) / (N1 - N0), 0, 1); return z > N0 - .005 && t < .205 && y > r.ys + r.ry * .05 && Math.abs(x) < r.rx * .92 && (z > N0 + 1.0 || y < 3.3); }; /* roof header over the driver's head (same as outside) */
+    const winSide = (z, y) => z > .2 && z < N0 - .25 && y > 2.0 && y < 2.95;   /* same opening as the outside */
+    Geo.hull(skin, { zs: zsi, sec: inSec, skip: (z, y, x, r) => winWs(z, y, x, r) || winSide(z, y), glass: tint, inset: .03,
       col: (z, y, x, r) => { const t = clamp((z - N0) / (N1 - N0), 0, 1);
         if ((t < .21 && z > N0 - .06 && y > r.ys - .06 && Math.abs(x) > r.rx * .9) || (z > N0 - .3 && z < N0 - .2 && y > 2.1) || (z > N0 - .06 && z < N0 + .01 && y > 2.1)) return [.06, .06, .07];
         return z > ZW - .05 || y < 2.25 ? DKc : y > 3.45 ? [.42, .44, .47] : WALL; } });
@@ -2915,6 +2937,19 @@ function buildHSLoco(opt) {
     const ir = zsi.map(z => Geo.ring(inSec(z), []).pts[0]), dn = [0, -1, 0];
     for (let i = 0; i < zsi.length - 1; i++) { const a = ir[i], b = ir[i + 1]; Geo.quad(skin, [a[0], a[1], zsi[i]], [-a[0], a[1], zsi[i]], [-b[0], b[1], zsi[i + 1]], [b[0], b[1], zsi[i + 1]], dn, dn, dn, dn, DKc); }
     const sm = skin.build(MAT.cabSkin); if (sm) g.add(sm);
+    { const tm = tint.build(MAT.cabGlass); if (tm) { tm.renderOrder = 5; g.add(tm); } }
+    /* rubber gaskets round the side windows (the opening's real height is the ring rows it skips) */
+    { const rr = Geo.ring(inSec(.7), []), hp = rr.pts.slice(0, rr.half); let y0 = 9, y1 = 0;
+      for (let i = 0; i < hp.length - 1; i++) { const ym = (hp[i][1] + hp[i + 1][1]) / 2; if (ym > 2.0 && ym < 2.95) { y0 = Math.min(y0, hp[i][1]); y1 = Math.max(y1, hp[i + 1][1]); } }
+      const GKh = [.06, .06, .07], wxh = (z, y) => Geo.xAt(inSec(z), y) - .012, z0 = .2, z1 = N0 - .25;
+      if (y1 > y0) for (const sg of [-1, 1]) {
+        for (const y of [y0 - .02, y1 + .02]) { const x = wxh((z0 + z1) / 2, y); cab.aabb(Math.min(sg * x, sg * (x - .02)), Math.max(sg * x, sg * (x - .02)), y - .02, y + .02, z0 - .02, z1 + .02, GKh); }
+        for (const z of [z0, z1]) { const x = wxh(z, (y0 + y1) / 2); cab.aabb(Math.min(sg * x, sg * (x - .02)), Math.max(sg * x, sg * (x - .02)), y0 - .02, y1 + .02, z - .025, z + .025, GKh); } } }
+    /* rear wall across the whole section (rounded roof included) with the door to the saloon */
+    { const RW = CZ0 + .06; Geo.capHoles(cab, RW, inSec(RW), [{ x0: -.42, x1: .42, y0: 1.75, y1: 3.05 }], y => y < 1.85 ? [.16, .16, .18] : y > 3.55 ? [.42, .44, .47] : WALL, 1);
+      cab.aabb(-.42, .42, 1.75, 3.05, RW - .06, RW - .03, [.3, .32, .36]); cab.aabb(-.22, .22, 2.35, 2.85, RW - .03, RW - .024, [.07, .08, .1]);
+      cab.aabb(-.46, -.42, 1.75, 3.09, RW - .03, RW + .015, [.07, .07, .08]); cab.aabb(.42, .46, 1.75, 3.09, RW - .03, RW + .015, [.07, .07, .08]); cab.aabb(-.46, .46, 3.05, 3.09, RW - .03, RW + .015, [.07, .07, .08]);
+      cab.aabb(.27, .35, 2.3, 2.35, RW - .03, RW + .03, [.7, .7, .72]); }
     /* curved windscreen glass for rain: the hull quads of the windscreen opening, a little inside the outer surface */
     const gSec = z => { const r = hsSec(z); return Object.assign({}, r, { hw: r.hw - .012, top: r.top - .012, bot: r.bot + .012, ry: Math.max(.1, r.ry - .012) }); };
     const zg = zsi.filter(z => z >= N0 - .01 && z <= ZW + .001), rg = zg.map(z => Geo.ring(gSec(z), [])), tris = [];
@@ -2924,8 +2959,6 @@ function buildHSLoco(opt) {
     const yb = hsSec(ZW).top, ytop = 3.72, zt = N0 + .75, ey = [0, ytop - yb, zt - ZW], el = Math.hypot(ey[1], ey[2]);
     hsGlass = { tris, O: [1.42, yb, ZW], ex: [-1, 0, 0], ey: [0, ey[1] / el, ey[2] / el], W: 2.84, H: el + .15 }; }
   cab.aabb(-1.2, 1.2, 1.65, 1.75, CZ0, 3.3, F);                                               /* floor */
-  cab.aabb(-1.38, -.45, 1.75, 3.5, CZ0, CZ0 + .1, WALL); cab.aabb(.45, 1.38, 1.75, 3.5, CZ0, CZ0 + .1, WALL); cab.aabb(-.45, .45, 3.0, 3.5, CZ0, CZ0 + .1, WALL); /* rear wall */
-  cab.aabb(-.45, .45, 1.75, 3.0, CZ0 - .1, CZ0, [.03, .03, .04]);                              /* door to the saloon */
   /* desk with an instrument hood: its top edge lines up with the bottom of the windscreen as seen from the driver's eye */
   cab.aabb(-1.0, 1.0, 1.75, 2.36, 2.4, 3.36, [.13, .14, .16]);                                 /* desk body */
   cab.aabb(-1.02, 1.02, 2.36, 2.4, 2.35, 3.38, [.2, .21, .24]);                                /* desk top */
@@ -2933,8 +2966,7 @@ function buildHSLoco(opt) {
   cab.aabb(-.12, .12, 2.4, 2.47, 2.7, 3.0, [.07, .07, .08]);                                  /* central control block */
   for (const sg of [-1, 1]) { cab.aabb(Math.min(sg * 1.0, sg * 1.18), Math.max(sg * 1.0, sg * 1.18), 1.75, 2.5, 2.0, 3.1, [.15, .16, .18]); for (let k = 0; k < 3; k++) cab.aabb(Math.min(sg * 1.04, sg * 1.14), Math.max(sg * 1.04, sg * 1.14), 2.5, 2.52, 2.2 + k * .25, 2.3 + k * .25, k === 1 ? [.8, .55, .1] : [.25, .55, .3]); }
   cab.aabb(-.6, .6, 2.36, 2.41, 2.42, 2.47, [.55, .57, .6]);                                     /* handrail on the desk edge */
-  cab.aabb(-.75, -.05, 1.75, 2.2, .9, 1.45, L.seat1); cab.aabb(-.75, -.05, 2.2, 3.2, .82, .94, L.seat1);   /* (behind the eye) */
-  cab.aabb(.05, .75, 1.75, 2.2, .9, 1.45, L.seat1); cab.aabb(.05, .75, 2.2, 3.2, .82, .94, L.seat1);
+  cabSeat(cab, 0, 1.75, 1.45, L.seat1, 1); cabSeat(cab, -.88, 1.75, .45, L.seat1, 1);         /* driver (behind the eye) and instructor seat */
   const cabMesh = cab.build(MAT.lit); g.add(cabMesh);
   const eye = new THREE.Vector3(CAB_EYE[0], CAB_EYE[1], CAB_EYE[2]);
   const scr = (w, h, cw, ch) => { const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch; const tex = new THREE.CanvasTexture(cv); tex.anisotropy = 4;
@@ -5312,7 +5344,7 @@ const Dev = {
   set(k) { this.kmh = clamp(Math.round(k), 1, 1000); if ($('devkmh')) $('devkmh').textContent = this.kmh; if ($('devr')) $('devr').value = this.kmh; this.sync(); },
   sync() { if (G.phys) { G.phys.devKmh = this.on() ? this.kmh : 0; G.phys.setDef(G.phys.def, G.phys.nc); } },
   show(v) { this.build(); const el = $('dev'); if (!el) return; el.classList.toggle('open', v === undefined ? !el.classList.contains('open') : v); if (v !== false && $('dev').classList.contains('open')) $('more').classList.remove('open'); this.tab(); },
-  tab() { const t = $('devtab'), el = $('dev'); if (!t || !el) return; document.body.classList.toggle('devopen', this.on() && el.classList.contains('open')); setTimeout(layoutVars, 30); t.style.display = this.on() && !el.classList.contains('open') ? 'block' : 'none'; if (!t.onclick) t.onclick = () => this.show(true); },
+  tab() { const t = $('devtab'), el = $('dev'); if (!t || !el) return; document.body.classList.toggle('devopen', this.on() && el.classList.contains('open')); syncSheets(); setTimeout(layoutVars, 30); t.style.display = this.on() && !el.classList.contains('open') ? 'block' : 'none'; if (!t.onclick) t.onclick = () => this.show(true); },
   cmd(c) {
     if (c === 'close') this.show(false);
     else if (c[0] === 'v') this.set(+c.slice(1));
@@ -5414,7 +5446,7 @@ const UI = {
     const L = typeof EventLog !== 'undefined' ? EventLog.list : [], el = $('evlist'); el.innerHTML = '';
     if (!L.length) el.textContent = _T('Подій ще не було.');
     for (const e of L.slice().reverse()) { const d = document.createElement('div'); d.innerHTML = '<b></b> <small></small><br><span></span>'; d.children[0].textContent = _T(e.name); d.children[1].textContent = e.time + ' · ' + _T(e.rar); d.children[3].textContent = _T(e.msg) + (e.desc ? ' — ' + _T(e.desc) : ''); el.appendChild(d); }
-    $('evlog').classList.add('open'); $('more').classList.remove('open'); G.paused = true;
+    $('evlog').classList.add('open'); $('more').classList.remove('open'); syncSheets(); G.paused = true;
   },
   sync() { this.showThr(this.G.thrT); this.showBrk(this.G.brkT); },
   act(a) {
@@ -5424,11 +5456,11 @@ const UI = {
       case 'wipers': G.wipers = !G.wipers; this.mark('wipers', G.wipers); break;
       case 'cam': CamMgr.next(); break;
       case 'emerg': Tutor.flags.emerg = 1; if (G.phys.emerg) { G.phys.emerg = false; } else { G.phys.emerg = true; G.thrT = 0; G.cruise = false; this.sync(); this.banner('ЕКСТРЕНЕ ГАЛЬМУВАННЯ'); haptic(90); } this.mark('emerg', G.phys.emerg); break;
-      case 'more': layoutVars(); $('more').classList.toggle('open'); if ($('more').classList.contains('open')) Dev.show(false); document.body.classList.toggle('menuopen', $('more').classList.contains('open')); break;
+      case 'more': $('more').classList.toggle('open'); if ($('more').classList.contains('open')) Dev.show(false); layoutVars(); break;
       case 'rev': G.reverse(); break;
       case 'cabin': G.cabinLight = !G.cabinLight; this.mark('cabin', G.cabinLight); break;
       case 'pause': G.paused = !G.paused; this.mark('pause', G.paused); break;
-      case 'hud': document.body.classList.toggle('nohud'); $('more').classList.remove('open'); document.body.classList.remove('menuopen'); break;
+      case 'hud': document.body.classList.toggle('nohud'); $('more').classList.remove('open'); syncSheets(); break;
       case 'music': SettingsManager.v.musicOn = !SettingsManager.v.musicOn; Sound.setVols(); this.mark('music', !SettingsManager.v.musicOn); this.banner(SettingsManager.v.musicOn ? 'Музика увімкнена' : 'Режим без музики'); break;
       case 'track': if (SettingsManager.v.musicOn) { const ids = Object.keys(TRACKS).filter(i => i !== Music.last); Music.play(ids[Math.floor(Math.random() * ids.length)]); this.banner('♪ ' + Music.name); } break;
       case 'settings': SettingsManager.build($('setlist'), (k, v) => G.applySetting(k, v), $('settabs')); $('settings').classList.add('open'); $('more').classList.remove('open'); G.paused = true; break;
@@ -5447,6 +5479,7 @@ const UI = {
       case 'closeev': $('evlog').classList.remove('open'); G.paused = false; this.mark('pause', false); break;
       case 'newtrip': G.newTrip(); $('settings').classList.remove('open'); break;
     }
+    syncSheets();
   },
   mark(a, on) { document.querySelectorAll('[data-act="' + a + '"]').forEach(b => b.classList.toggle('on', !!on)); },
   tx(id, v) { const c = this._tc || (this._tc = {}); v = String(v); if (c[id] !== v) { c[id] = v; $(id).textContent = v; } },
@@ -5504,7 +5537,7 @@ const Menu = {
   scr: 'journey', pick: null, open: false,
   canContinue() { return (G.running && G.mode !== 'tutorial') || !!SaveSystem.read(); },
   show(scr) {
-    this.open = true; document.body.classList.add('menuopen', 'inmenu'); $('start').classList.add('open'); $('more').classList.remove('open'); $('settings').classList.remove('open');
+    this.open = true; document.body.classList.add('menuopen', 'inmenu'); $('start').classList.add('open'); $('more').classList.remove('open'); $('settings').classList.remove('open'); syncSheets();
     if (scr) this.scr = scr; this.render();
   },
   close() { this.open = false; document.body.classList.remove('menuopen', 'inmenu'); $('start').classList.remove('open'); },
@@ -5756,7 +5789,7 @@ const G = {
   reverse() { if (G.phys.v > .15) { UI.banner(_T('Реверс можливий лише на зупинці')); return; } if (G.revT > 0) return; G.revT = 1.4; G.revDone = false; Tutor.flags.rev = 1; UI.banner(_T('Потяг розвертається на розворотному колі')); },
   /* leave to the main menu: the journey is saved and paused (a lesson simply ends) */
   toMenu() {
-    $('more').classList.remove('open'); $('settings').classList.remove('open'); $('evlog').classList.remove('open'); Dev.show(false);
+    $('more').classList.remove('open'); $('settings').classList.remove('open'); $('evlog').classList.remove('open'); Dev.show(false); syncSheets();
     if (Tutor.on || G.mode === 'tutorial') { Tutor.end(); Tutor.restore(); G.running = false; G.mode = 'free'; }
     else if (G.running) { G.save(); G.paused = true; G.inMenu = true; }
     G.horn = false; Sound.horn(false); Profile.save(); Menu.show(Menu.scr === 'lang' ? 'journey' : Menu.scr);
@@ -5846,21 +5879,32 @@ function resize() {
   camera.fov = CamMgr.lens(SettingsManager.v.fov || 70); camera.updateProjectionMatrix(); layoutVars();
 }
 /* height of the bottom control area, measured, so the HUD never runs under the levers or the buttons */
+/* body classes for the side sheets: moreopen (in-game menu), sideopen (either sheet, the HUD makes room) */
+function syncSheets() { const b = document.body, m = $('more'), d = $('dev'), mo = !!(m && m.classList.contains('open')), dv = !!(d && d.classList.contains('open') && Dev.on && Dev.on());
+  b.classList.toggle('moreopen', mo); b.classList.toggle('sideopen', mo || dv); }
 function layoutVars() {
-  const ctl = $('ctl'), st = document.documentElement.style; if (!ctl) return;
+  syncSheets(); const ctl = $('ctl'), st = document.documentElement.style; if (!ctl) return;
   const H = window.innerHeight, vis = getComputedStyle(ctl).display !== 'none' && !document.body.classList.contains('photoMode');
   let top = H, mid = H; if (vis) { for (const id of ['thr', 'brk']) { const r = $(id).getBoundingClientRect(); if (r.height) top = Math.min(top, r.top); } const rb = $('btns').getBoundingClientRect(); if (rb.height) { mid = rb.top; top = Math.min(top, rb.top); } }
   const ch = Math.max(0, H - top + 6) + 'px', cm = Math.max(0, H - mid + 6) + 'px';
   if (st.getPropertyValue('--ctlh') !== ch) st.setProperty('--ctlh', ch); if (st.getPropertyValue('--ctlm') !== cm) st.setProperty('--ctlm', cm);
   /* portrait: the menu sheet starts below the top info rows (speed, pressure, clock) unless that would leave it too short */
-  /* landscape: below the station card and the clock row, so the sheet never half-covers them */
-  const port = H > window.innerWidth; let hb = 0; for (const id of port ? ['speedbox', 'stn', 'bp', 'info'] : ['stn', 'info']) { const e = $(id); if (!e || e.offsetParent === null) continue; const r = e.getBoundingClientRect(); if (r.height > 1 && r.top < H * .4) hb = Math.max(hb, r.bottom); }
-  const stp = Math.round(Math.max(8, Math.min(hb + 6, port ? top - 6 - 260 : mid - 6 - 180))) + 'px'; if (st.getPropertyValue('--sheett') !== stp) st.setProperty('--sheett', stp);
+  /* portrait: the in-game menu starts under every HUD row (lesson and assistant included) while that leaves it 240 px;
+     otherwise the HUD rows above it scroll (body.moreopen #hud) instead of being covered */
+  const port = H > window.innerWidth; let hb = 0;
+  if (port) { const hs = $('hud') ? $('hud').scrollTop : 0, bot = (ids, any) => { let b = 0; for (const id of ids) { const e = $(id); if (!e || e.offsetParent === null || (!any && +getComputedStyle(e).opacity < .05)) continue; const r = e.getBoundingClientRect(); if (r.height > 1 && r.top + hs < top) b = Math.max(b, r.bottom + hs); } return b; };
+    /* a slot for one banner line is kept free under the fixed rows, so messages that pop up later neither jump the sheet nor hide under it */
+    hb = Math.max(bot(['speedbox', 'stn', 'bp', 'evtag', 'info', 'guide', 'lesson']) + 40, bot(['banner', 'evcard'], true)); }  /* fading in counts already */
+  const stp = Math.round(Math.max(8, Math.min(hb + 12, port ? top - 6 - 240 : mid - 6 - 180))) + 'px';  /* +12: the HUD's bottom padding fits above the sheet */ if (st.getPropertyValue('--sheett') !== stp) st.setProperty('--sheett', stp);
+  /* landscape with a side sheet: the right-column panels sit under the speed card and must end above the traction lever */
+  if (!port && document.body.classList.contains('sideopen')) { const hl = $('hudL').getBoundingClientRect(), mx = Math.max(60, Math.round(top - 6 - hl.bottom - 6)) + 'px'; if (st.getPropertyValue('--hudrmax') !== mx) st.setProperty('--hudrmax', mx); }
   /* portrait events sheet: as tall as the room left under the HUD rows, keeping space for a banner and an event card */
   if (port) { let sb = 0; for (const id of ['speedbox', 'stn', 'bp', 'evtag', 'info', 'guide', 'lesson']) { const e = $(id); if (!e || e.offsetParent === null) continue; const r = e.getBoundingClientRect(); if (r.height > 1) sb = Math.max(sb, r.bottom); }
     const dh = Math.round(Math.max(140, Math.min(H * .38, top - 6 - (sb + 6 + 96)))) + 'px'; if (st.getPropertyValue('--devh') !== dh) st.setProperty('--devh', dh); }
 }
 setInterval(() => { try { layoutVars(); } catch (e) { } }, 1000);
+/* panels that grow or shrink (junction tag, lesson text, banner) re-measure the layout at once, not on the next tick */
+try { if (window.ResizeObserver) { const ro = new ResizeObserver(() => { try { layoutVars(); } catch (e) { } }); for (const id of ['hudL', 'hudC', 'hudR', 'btns', 'thr', 'speedcard', 'speedbox', 'bp', 'stn', 'info', 'lesson', 'guide', 'banner', 'evcard']) { const e = document.getElementById(id); if (e) ro.observe(e); } } } catch (e) { }
 
 function initEngine() {
   if (engineReady) return; engineReady = true;

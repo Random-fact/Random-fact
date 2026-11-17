@@ -157,3 +157,27 @@ Same environment as above (headless Chromium + SwiftShader). Screens from 320×5
 * Rain drops are drawn into one 512 px canvas texture per windscreen. On a large tablet the drops are slightly soft.
 * Roads are generated per chunk. Beyond the loaded land (~1 km to each side) they continue only as far as the terrain is
   built, and they fade into the distance fog rather than ending visibly.
+
+---
+
+## Update 17 Nov 2026 (2): fixes from the device screenshots
+Device in the screenshots: about 834×375 CSS px landscape. All checks below were repeated at that size too.
+
+| Screenshot finding | Cause → fix |
+|---|---|
+| Looking back from the cab showed the outside through an arch above the rear wall (both trains) | The rear wall was rectangular, but the roof is rounded, so the arch between them stayed open. → The rear wall now fills the whole body section, with a framed door to the engine room / saloon. The classic cab also has side doors inside. |
+| Seats were plain blue boxes | New seats: floor plate, column, cushion, reclined backrest, headrest, armrests, darker upholstery. HS: a central driver's seat and an instructor seat. |
+| Classic cab, marked “###”: the corner windows and the pillar strip next to the windscreen looked like holes | One **panoramic windscreen** (no centre pillar) that wraps round the corners with slim corner seams. Behind it: padded A-pillars, then side windows with a sliding-window divider. Every window has **one** faint glass layer, so glass reads as glass. The exterior was changed to match (pillar between the side window and the wrap-round glass). Wipers and rain glass were moved to the single pane. |
+| HS: very large side window and sky visible when looking up | The side window is now beside the driver and the same size inside and outside, with gaskets. The roof header over the driver is longer (inside and outside). |
+| Menu (red frame): not at the edge, covered the welcome banner | In landscape the in-game menu and the events sheet stand at the **right screen edge, above the brake lever**. The HUD makes room: the station card moves under the speed card and becomes one line. On narrow screens the HUD rows sit between the traction lever and the sheet. In portrait the menu starts under all HUD rows, with a reserved line for banners. If a lesson needs more room than the screen has, the HUD rows **scroll** instead of overlapping or being cut. Lesson titles and event tags wrap instead of being cut with “…”. Layout is re-measured as soon as a panel changes size. |
+| “Живлення” bubble over the buttons | Not part of the game: this text does not exist in any of its 10 languages. It is an Android system hint (power/side key), probably from taking the screenshot. |
+
+| Test | Result |
+|---|---|
+| Look-around from both cabs (front, sides, back, up, down) at 834×375 | **Pass**: closed room from every angle, nothing seen through the body |
+| Exterior views of both locomotives | **Pass**: windows match the interior openings |
+| Layout at 834×375, 889×400, 640×320, 568×320, 915×412, 1180×820, 390×844, 320×568, 360×640, 884×1104 (free, events, in-game menu, lesson, lesson + menu) | **Pass**: 0 overlaps, 0 cut or squeezed panels. The HUD rows scroll only where the screen is too small for everything: lesson + open menu on 320–640 px tall screens, and the events sandbox with an achievement card at 320×568 and 360×640 |
+| Wipers on the panoramic pane (stepped simulation) | **Pass**: classic 76 % of the pane cleared (top corners and the outer edges stay wet, as with real parallel wipers); HS 56 % |
+| Full scenarios at 834×375, 390×844, 1180×820 (cabs, levers, rain in cab and outside, every menu, events, photo hide/restore) | **Pass** |
+| Regression (desktop, phone portrait, phone landscape journeys), dialogs at 3 sizes | **Pass**, no page errors |
+| Test APK rebuilt; its inlined page offline | **Pass**: 0 network requests, 0 errors |
