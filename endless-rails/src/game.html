@@ -992,6 +992,7 @@ function initMaterials() {
   MAT.terrain = new THREE.MeshLambertMaterial({ vertexColors: true });
   MAT.water = new THREE.MeshPhongMaterial({ color: 0x2b6a88, specular: 0xaabbcc, shininess: 70, transparent: true, opacity: .82, depthWrite: false });
   MAT.lit = new THREE.MeshLambertMaterial({ vertexColors: true });
+  MAT.cabSkin = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.BackSide }); /* cab / nose inner shell, seen from inside only */
   MAT.build = new THREE.MeshLambertMaterial({ vertexColors: true, map: wt, emissive: 0xffffff, emissiveMap: we, emissiveIntensity: 0 });
   MAT.emis = new THREE.MeshBasicMaterial({ vertexColors: true });
   MAT.lamp = new THREE.MeshBasicMaterial({ color: 0x554a30 });
@@ -2607,37 +2608,51 @@ function buildHSLoco(opt) {
   g.add(sh.build(MAT.trainBody, true)); g.add(lens.build(opt.tail ? (opt.ai ? MH.aiTail : MH.tail) : MH.head));
   const res = { g, axles, heads, beam: [0, 1.1, N1 + .6], len: 26 };
   if (ext) return res;
-  /* cab: raised floor, glare shield under the canopy, desk with two glass displays, side windows */
-  const W = L.inner, F = [.17, .17, .19], DKc = [.12, .13, .16], CT = 3.45, CZ0 = -.5, DZ = 2.5, SZ = 3.05;
-  cab.aabb(-1.38, 1.38, 1.65, 1.75, CZ0, SZ, F);
-  cab.aabb(-1.3, 1.3, CT, CT + .06, CZ0, N0 - .05, W);
-  cab.aabb(-1.38, -.45, 1.75, CT, CZ0, CZ0 + .1, W); cab.aabb(.45, 1.38, 1.75, CT, CZ0, CZ0 + .1, W); cab.aabb(-.45, .45, 3.0, CT, CZ0, CZ0 + .1, W);
-  cab.aabb(-.45, .45, 1.75, 3.0, CZ0 - .1, CZ0, [.03, .03, .04]);
-  for (const sg of [-1, 1]) { const x0 = Math.min(sg * 1.3, sg * 1.38), x1 = Math.max(sg * 1.3, sg * 1.38);
-    cab.aabb(x0, x1, 1.75, CT, CZ0, -.4, W); cab.aabb(x0, x1, 1.75, 2.2, -.4, N0 + .2, W); cab.aabb(x0, x1, 3.3, CT, -.4, N0 - .05, W);
-    cab.aabb(x0, x1, 1.75, 2.55, N0 + .2, SZ, W); }
-  cab.aabb(-1.36, 1.36, 1.75, 2.38, DZ, SZ, [.14, .15, .18]);                          /* desk body */
-  cab.add(TPL.box, 0, 2.42, DZ + .27, 2.7, .07, .62, 0, .5, [.1, .11, .14]);              /* inclined desk face */
-  { const y0 = 2.6, y1 = 2.47, z1 = 3.8; cab.add(TPL.box, 0, (y0 + y1) / 2, (SZ + z1) / 2, 2.3, .05, z1 - SZ + .05, 0, Math.atan2(y1 - y0, z1 - SZ), DKc); } /* glare shield */
-  cab.aabb(-.75, -.05, 1.75, 2.2, .7, 1.25, L.seat1); cab.aabb(-.75, -.05, 2.2, 3.15, .62, .74, L.seat1); /* driver seat behind the eye */
+  /* cab. The driver sits inside the hull under the windscreen canopy; the hull is single-sided, so from inside it is invisible.
+     An inner shell that follows the hull (drawn from inside only) makes every part of the cab and of the hollow nose opaque
+     except the windscreen and the side windows — nothing can be seen through the train body any more.
+     Screen-left in the cab is local +x (the camera looks along +z). */
+  const CZ0 = -.5, ZW = N0 + .205 * (N1 - N0), F = [.15, .15, .17], DKc = [.09, .1, .12], WALL = [.5, .52, .55];
+  { const skin = new Builder(), zsi = zs.filter(z => z >= CZ0 - .001);
+    if (zsi[0] > CZ0) zsi.unshift(CZ0);
+    const inSec = z => { const r = hsSec(z); return Object.assign({}, r, { hw: r.hw - .035, top: r.top - .035, bot: r.bot + .035, ry: Math.max(.1, r.ry - .035) }); };
+    const winWs = (z, y, x, r) => { const t = clamp((z - N0) / (N1 - N0), 0, 1); return z > N0 - .02 && t < .205 && y > r.ys + r.ry * .12 && Math.abs(x) < r.rx * (.8 - t); };
+    const winSide = (z, y) => z > -.4 && z < N0 + .2 && y > 2.15 && y < 3.35;
+    Geo.hull(skin, { zs: zsi, sec: inSec, skip: (z, y, x, r) => winWs(z, y, x, r) || winSide(z, y),
+      col: (z, y) => z > ZW - .05 || y < 2.25 ? DKc : y > 3.45 ? [.42, .44, .47] : WALL });
+    /* closed underside of the shell (faces point down: drawn from inside, above them) */
+    const ir = zsi.map(z => Geo.ring(inSec(z), []).pts[0]), dn = [0, -1, 0];
+    for (let i = 0; i < zsi.length - 1; i++) { const a = ir[i], b = ir[i + 1]; Geo.quad(skin, [a[0], a[1], zsi[i]], [-a[0], a[1], zsi[i]], [-b[0], b[1], zsi[i + 1]], [b[0], b[1], zsi[i + 1]], dn, dn, dn, dn, DKc); }
+    const sm = skin.build(MAT.cabSkin); if (sm) g.add(sm); }
+  cab.aabb(-1.2, 1.2, 1.65, 1.75, CZ0, 3.3, F);                                               /* floor */
+  cab.aabb(-1.38, -.45, 1.75, 3.5, CZ0, CZ0 + .1, WALL); cab.aabb(.45, 1.38, 1.75, 3.5, CZ0, CZ0 + .1, WALL); cab.aabb(-.45, .45, 3.0, 3.5, CZ0, CZ0 + .1, WALL); /* rear wall */
+  cab.aabb(-.45, .45, 1.75, 3.0, CZ0 - .1, CZ0, [.03, .03, .04]);                              /* door to the saloon */
+  /* desk with an instrument hood: its top edge lines up with the bottom of the windscreen as seen from the driver's eye */
+  cab.aabb(-1.0, 1.0, 1.75, 2.36, 2.4, 3.36, [.13, .14, .16]);                                 /* desk body */
+  cab.aabb(-1.02, 1.02, 2.36, 2.4, 2.35, 3.38, [.2, .21, .24]);                                /* desk top */
+  cab.aabb(-.72, .72, 2.4, 2.58, 3.38, 3.54, DKc);                                             /* instrument hood */
+  cab.aabb(-.12, .12, 2.4, 2.47, 2.7, 3.0, [.07, .07, .08]);                                  /* central control block */
+  cab.aabb(-.75, -.05, 1.75, 2.2, .9, 1.45, L.seat1); cab.aabb(-.75, -.05, 2.2, 3.2, .82, .94, L.seat1);   /* (behind the eye) */
+  cab.aabb(.05, .75, 1.75, 2.2, .9, 1.45, L.seat1); cab.aabb(.05, .75, 2.2, 3.2, .82, .94, L.seat1);
   const cabMesh = cab.build(MAT.lit); g.add(cabMesh);
   const eye = new THREE.Vector3(CAB_EYE[0], CAB_EYE[1], CAB_EYE[2]);
-  const cv = document.createElement('canvas'); cv.width = 640; cv.height = 320; const tex = new THREE.CanvasTexture(cv);
-  const panel = new THREE.Mesh(new THREE.PlaneGeometry(.84, .42), new THREE.MeshBasicMaterial({ map: tex }));
-  panel.position.set(-.32, 2.48, DZ + .36); g.add(panel); panel.lookAt(eye);
-  const cv2 = document.createElement('canvas'); cv2.width = 320; cv2.height = 160; const tex2 = new THREE.CanvasTexture(cv2);
-  const panel2 = new THREE.Mesh(new THREE.PlaneGeometry(.6, .3), new THREE.MeshBasicMaterial({ map: tex2 }));
-  panel2.position.set(.45, 2.46, DZ + .42); g.add(panel2); panel2.lookAt(eye);
+  const scr = (w, h, cw, ch) => { const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch; const tex = new THREE.CanvasTexture(cv); tex.anisotropy = 4;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex })); g.add(m); return { cv, tex, m }; };
+  const S1 = scr(.6, .3, 640, 320), S2 = scr(.4, .2, 320, 160);
+  S1.m.position.set(.23, 2.555, 3.2); S1.m.lookAt(eye); S2.m.position.set(-.43, 2.54, 3.22); S2.m.lookAt(eye);
+  for (const S of [S1, S2]) { const b = new THREE.Mesh(new THREE.PlaneGeometry(S.m.geometry.parameters.width + .03, S.m.geometry.parameters.height + .03), new THREE.MeshBasicMaterial({ color: 0x050608 })); b.position.copy(S.m.position); b.quaternion.copy(S.m.quaternion); b.translateZ(-.004); g.add(b); }
   const mkLever = (x, colr, len) => {
-    const p = new THREE.Group(); p.position.set(x, 2.44, DZ + .1);
-    const st = new THREE.Mesh(new THREE.BoxGeometry(.04, len, .04), new THREE.MeshLambertMaterial({ color: 0x777b82 })); st.position.y = len / 2; p.add(st);
-    const kn = new THREE.Mesh(new THREE.BoxGeometry(.07, .06, .1), new THREE.MeshLambertMaterial({ color: colr })); kn.position.y = len + .03; p.add(kn); g.add(p); return p;
+    const p = new THREE.Group(); p.position.set(x, 2.4, 3.0);
+    const base = new THREE.Mesh(new THREE.BoxGeometry(.12, .03, .2), new THREE.MeshLambertMaterial({ color: 0x2a2c30 })); base.position.y = .015; p.add(base);
+    const st = new THREE.Mesh(new THREE.BoxGeometry(.03, len, .03), new THREE.MeshLambertMaterial({ color: 0x8a8e94 })); st.position.y = len / 2; p.add(st);
+    const kn = new THREE.Mesh(new THREE.BoxGeometry(.09, .045, .06), new THREE.MeshLambertMaterial({ color: colr })); kn.position.y = len + .02; p.add(kn); g.add(p); return p;
   };
-  const thrL = mkLever(-.9, 0x1b4f9c, .2), brkL = mkLever(.2, 0xb02a20, .2);
+  const thrL = mkLever(.82, 0x1b4f9c, .24), brkL = mkLever(-.82, 0xb02a20, .24);
   const wipers = [];
-  { const p = new THREE.Group(); p.position.set(-.1, 2.6, N0 + 2.2); p.rotation.x = -1.06; const a = new THREE.Mesh(new THREE.BoxGeometry(.025, 1.25, .02), new THREE.MeshLambertMaterial({ color: 0x101010 })); a.position.y = .62; p.add(a); g.add(p); wipers.push(p); }
+  { const p = new THREE.Group(); p.position.set(.32, 2.715, ZW - .12); p.rotation.x = -1.08; const a = new THREE.Mesh(new THREE.BoxGeometry(.018, 1.05, .015), new THREE.MeshLambertMaterial({ color: 0x15171a })); a.position.y = .52; p.add(a); g.add(p); wipers.push(p); }
+  const cv = S1.cv, tex = S1.tex, cv2 = S2.cv, tex2 = S2.tex;
   const spot = new THREE.SpotLight(0xf4f8ff, 0, 520, .3, .5, 1.1); spot.position.set(0, 1.3, N1 + .6); const tg = new THREE.Object3D(); tg.position.set(0, 1.2, 80); g.add(tg); spot.target = tg; g.add(spot);
-  return Object.assign(res, { cv, tex, cv2, tex2, thrL, brkL, wipers, spot, cabMesh, draw: drawHSPanels, pantoMat: null });
+  return Object.assign(res, { cv, tex, cv2, tex2, thrL, brkL, wipers, spot, cabMesh, draw: drawHSPanels, pantoMat: null, hideParked: true });
 }
 /* rear driving car of the high-speed set: the same nose turned round, with passenger doors and red tail lamps */
 function buildHSTail(rr, opt) {
@@ -2671,11 +2686,13 @@ function drawHSPanels(L, ph, speedKmh, thr, wxTxt) {
   c.fillStyle = '#26323f'; c.fillRect(30, 296, 580, 8); c.fillStyle = '#4aa3ff'; c.fillRect(30, 296, 580 * thr, 8);
   c.fillStyle = '#e8a33d'; const notch = Math.round(thr * 4); for (let i = 0; i < 4; i++) c.fillRect(30 + 580 * (i + 1) / 4 - 2, 290, 3, 20);
   L.tex.needsUpdate = true;
-  const d = L.cv2.getContext('2d'); d.fillStyle = '#04070b'; d.fillRect(0, 0, 320, 160);
-  d.fillStyle = '#4aa3ff'; d.font = cfont('600', 24); d.textAlign = 'left'; d.fillText(_T('25 кВ · ПАНТОГРАФ ↑'), 10, 30, 300);
-  d.fillStyle = '#9fb3c8'; d.font = cfont('400', 18); d.fillText(_T('ТЯГА {0}%', Math.round(thr * 100)) + '  ' + _T('{0} кН', Math.round(thr * 300)), 10, 62, 300);
-  d.fillText(_T('ПРИСК. {0} м/с²', fmtN(ph.acc, 2)), 10, 88, 300); d.fillText(wxTxt || '', 10, 114, 300);
-  d.fillStyle = ph.emerg ? '#d9503f' : '#244a35'; d.fillRect(10, 132, 300, 12); L.tex2.needsUpdate = true;
+  /* traction display: large, high-contrast lines with margins (it is small on a phone screen) */
+  const d = L.cv2.getContext('2d'); d.fillStyle = '#04070b'; d.fillRect(0, 0, 320, 160); d.textAlign = 'left'; d.textBaseline = 'alphabetic';
+  d.fillStyle = '#4aa3ff'; d.font = cfont('600', 20); d.fillText(_T('25 кВ · ПАНТОГРАФ ↑'), 18, 30, 284);
+  d.fillStyle = '#ffffff'; d.font = cfont('600', 38); d.fillText(_T('ТЯГА {0}%', Math.round(thr * 100)), 18, 74, 284);
+  d.fillStyle = '#17212c'; d.fillRect(18, 86, 284, 10); d.fillStyle = '#4aa3ff'; d.fillRect(18, 86, 284 * thr, 10);
+  d.fillStyle = '#c9d4dd'; d.font = cfont('400', 22); d.fillText(_T('ПРИСК. {0} м/с²', fmtN(ph.acc, 2)), 18, 124, 284);
+  d.fillStyle = ph.emerg ? '#d9503f' : '#244a35'; d.fillRect(18, 140, 284, 10); L.tex2.needsUpdate = true;
 }
 
 const TRAIN_DEFS = {
@@ -2689,7 +2706,7 @@ const TRAIN_DEFS = {
   hs: {
     id: 'hs', name: 'Електропоїзд «Стріла HS»', short: 'СТРІЛА HS', desc: 'Швидкісний електропоїзд із носовим обтічником і склоекранною кабіною. До 250 км/год на швидкісних ділянках, на звичайній колії — лише 160. Ступінчаста тяга, АЗШ.',
     mass: 400000, m0: 100000, mc: 60000, pk: n => .5 + .1 * n, power: 8.4e6, fmax: 330e3, vmax: 250 / 3.6, roll: .0011, lin: 22, cx: 3.4, brk: 1.0, fade: .12, bpRel: .95, bpRise: .5,
-    ncars: 6, locoLen: 26, carLen: 22, eye: [-.35, 3.0, 1.85], buildLoco: buildHSLoco, car: { liv: LIV_HS, hs: 1, wh: .6, wc: [-6.9, -4.6, -2.3, 0, 2.3, 4.6, 6.9], y0: 2.0, y1: 2.95, top: 3.85, ry: .8, bands: L => [[0, 1.3, L.teal], [1.55, 1.68, L.acc || L.teal]] },
+    ncars: 6, locoLen: 26, carLen: 22, eye: [0, 3.2, 1.9], cabPitch: -.06, buildLoco: buildHSLoco, car: { liv: LIV_HS, hs: 1, wh: .6, wc: [-6.9, -4.6, -2.3, 0, 2.3, 4.6, 6.9], y0: 2.0, y1: 2.95, top: 3.85, ry: .8, bands: L => [[0, 1.3, L.teal], [1.55, 1.68, L.acc || L.teal]] },
     lineMax: 160, fastMax: 250, latA: 1.25, comfDecel: .7, notch: 4, headLean: .8,
     snd: { pitch: .8, diesel: 0, whine: 1 }, atp: 'auto'
   }
@@ -4872,7 +4889,7 @@ const CamMgr = {
       this.applyLook(L, inp, dt, sens, lim);
       const sh = id === 'cab' || id === 'pass' ? shake(1) : shake(.4);
       const hl = (id === 'cab' || id === 'pass') ? train.def.headLean : 0, ac = clamp(S.acc || 0, -1.4, 1.4), lt = clamp(S.lat || 0, -3, 3); p.set(local[0] + sh[0] - lt * .014 * hl, local[1] + sh[1] - Math.abs(lt) * .004 * hl, local[2] - ac * .07 * hl); it.g.updateMatrixWorld(); it.g.localToWorld(p);
-      e.set(L.pitch, baseYaw + L.yaw, 0); q.setFromEuler(e); q.premultiply(it.g.getWorldQuaternion(new THREE.Quaternion()));
+      e.set(L.pitch + (id === 'cab' ? train.def.cabPitch || 0 : 0), baseYaw + L.yaw, 0); q.setFromEuler(e); q.premultiply(it.g.getWorldQuaternion(new THREE.Quaternion()));
       cam.position.copy(p); cam.quaternion.copy(q); wantFov = fov + inp.zoom * -2 * 0; this.zoomF = clamp((this.zoomF || 0) + inp.zoom * .02, -.3, .5); wantFov = fov * (1 + this.zoomF);
     } else if (id === 'walk') {
       this.applyLook(L, inp, dt, sens, [Math.PI, 1.2]);
@@ -5585,7 +5602,7 @@ function frame(now) {
   EnvMap.update(dt);
   cabLight.intensity = CamMgr.inside ? night * 1.0 * (G.cabinLight ? 1 : .3) : 0;
   if (G.wipers) UI.wipePhase += dt * 1.9; const sw = .5 + .5 * Math.sin(UI.wipePhase - Math.PI / 2), sweepNow = G.wipers ? sw : 0;
-  for (const w of L.wipers) w.rotation.z = lerp(-1.45, .15, sweepNow); G.wipeSweep = sweepNow;
+  for (const w of L.wipers) { w.rotation.z = lerp(-1.45, .15, sweepNow); if (L.hideParked) w.visible = sweepNow > .02; } G.wipeSweep = sweepNow;
   G.drawT = (G.drawT || 0) - dt; if (G.drawT < 0 && id === 'cab') { G.drawT = .066; (L.draw || drawCabPanels)(L, p, p.v * 3.6, p.throttle, _T(Env.wxName)); }
   L.thrL.rotation.x = lerp(.55, -.55, p.throttle); L.brkL.rotation.x = lerp(.55, -.55, p.brake);
   sky.update(dt, G.t, Env.tunnel); precip.update(dt, camera.position, G.camVel, G.t);
