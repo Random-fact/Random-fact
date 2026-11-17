@@ -1,6 +1,6 @@
 # ENDLESS RAILS 2.0 — work and test report
 
-Date: 16 Nov 2026 · Source: `endless-rails/src/game.html` (single self-contained HTML, ~835 KB) · Android: `android/`
+Date: 16 Nov 2026 · Source: `endless-rails/src/game.html` (single self-contained HTML, ~880 KB) · Android: `android/`
 
 ## How it was tested — read this first
 * **Environment:** headless Chromium (Playwright) with **SwiftShader software WebGL** on a Linux server, viewports from
@@ -11,7 +11,7 @@ Date: 16 Nov 2026 · Source: `endless-rails/src/game.html` (single self-containe
 * Ads were exercised only through a **mock of the Android bridge inside the test harness**. The game never simulates an ad or a
   reward on its own: without the native SDK, `Ads.enabled()` is false and all extras are simply free.
 * Translations (9 languages) were produced by AI translators working from a glossary and were checked automatically
-  (all 595 keys, placeholders, no Cyrillic left on any screen). **A native-speaker review is recommended** before release.
+  (all 596 keys, placeholders, no Cyrillic left on any screen). **A native-speaker review is recommended** before release.
 
 ## Bugs found and fixed in this update
 | # | Problem | Root cause → fix |
@@ -114,3 +114,46 @@ and is signed (target 36, min 24, only VIBRATE permission); every settings optio
 * WebView + WebGL1 (three.js r128): on very old GPUs the LOW tier is the floor; there is no native renderer.
 * Station names are generated (not real places); TTS quality depends on the voices installed on the phone.
 * Rewards are stored only on the device (no account/cloud); clearing app data removes unlocks (Android backup restores them if enabled).
+
+---
+
+## Update 17 Nov 2026: cabs, HUD, menus and world
+Same environment as above (headless Chromium + SwiftShader). Screens from 320×568 up to 1600×686 (21:9).
+
+### What changed
+| # | Request | What was wrong → what was done |
+|---|---|---|
+| 1 | Classic cab | The old cab was a box with a pane of glass in front of the camera, and from some angles you saw sky, then glass again. → Rebuilt: an opaque inner shell that follows the body, one windscreen split by a centre pillar with gaskets (one glass layer, no overlapping transparent surfaces), side and corner windows, a sloped instrument desk with gauges and a display, an assistant console, an inclined panel holding the traction and brake levers, seats, a rear wall and door, a ceiling light and a handrail. The camera was moved to the driver's seat with a slight downward look. |
+| 2 | Info bar overlapping other panels | Panels were positioned with fixed offsets and collided on some screens. → The HUD is now a 3-column grid sized from the measured control area (lever and button tops). Each panel is compact and keeps its information. |
+| 3 | Roads | Roads started in front of the train and ended in mid-air. → Roads now run to the edge of the loaded land (±1 km) or stop at a slope or water. A blocked end gets a destination (farm, sawmill, quarry, depot, harbour, military base). Villages and industrial zones get exit roads. Cars follow these lanes, and trees keep clear of them. |
+| 4 | Training panel | Compact panel with step number and a × button in its header. It sits in the centre column, not over the controls, in both orientations. The levers are mounted on a cab panel, not floating. |
+| 5, 9, 13 | Menus, events menu | One sheet model for all menus. The header (title and close) never scrolls; only the body scrolls. The sheet sits above the buttons, starts below the station card or the top info rows, and closes with × or the system Back gesture. The events sheet is at the screen edge, and the HUD reflows next to it: two columns, or one column on narrow landscape screens. |
+| 6 | Braking assistant | Smaller panel (distance, predicted stop, scale, advice) in the right column (landscape) or below the clock (portrait). |
+| 7 | Station names | Now on a framed double-sided board standing on two posts on the platform, not floating in the air. |
+| 8 | Rain in the cab | Drops are drawn on the 3D windscreen. Their number depends on rain strength and speed. Drops run down with gravity and drift with speed and side wind, leaving trails. The wipers sweep a real sector, leave a light wet streak and some edge residue. Other cameras unchanged: no lens drops in chase/orbit, window drops in passenger/walk cameras as before. |
+| 10 | Photo mode | “Hide panel” now shows a small semi-transparent “Show UI” button in a corner. It restores the interface without moving the camera and works repeatedly. It also brings back a HUD hidden with “Hide HUD”. |
+| 11 | Portrait | Speed and station at the top, then pressure/signal, clock, assistant and lesson. Controls are at the thumb-reachable bottom with safe-area insets. The camera view is shifted so the track and horizon are not hidden behind the controls. |
+| 12 | HS cab | The odd step between the side windows and the narrowing windscreen was removed. The windscreen keeps one width and gets a pillar and gaskets. Added: desk side consoles, two mirrored wipers, and an opaque shell up to the nose tip (no seeing the track through the nose). |
+
+### Tests run (all at 6 sizes: 889×400, 640×320, 1180×820, 390×844, 360×640, 884×1104; layout retest also at 533×320, 568×320, 915×412, 1600×686, 320×568)
+| Scenario | Result | How |
+|---|---|---|
+| Classic train, cab camera | **Pass** | screenshots at every size; overlap check of all HUD panels, levers and buttons (0 overlaps, nothing off-screen, no clipped button text) |
+| HS train, cab camera | **Pass** | same; earlier close-ups from 6 head positions: no see-through, no geometry in front of the camera |
+| Rain in the cab with wipers | **Pass** | heavy rain at 72 km/h: 45–76 drops on the 3D glass; wiper sweep measured by stepping the simulation: classic 66 % → 82 % of the swept area clear, HS 16 % → 56 % (two wipers) |
+| Rain in external cameras | **Pass (unchanged)** | chase camera: 3D rain only, the cab glass is hidden, no screen overlay |
+| Training with all hints | **Pass** | lesson 3 at 2.6 km with braking assistant + lesson panel + station banner: no overlaps at any size; also with the menu open |
+| Traction and brake in the cab | **Pass** | throttle 60 % / brake 50 % → both cab levers rotate (`thrL`/`brkL`), HUD bars and percentages follow |
+| Each main menu open/close | **Pass** | in-game menu (close button stays in place after scrolling the body to the end), settings (inner scroll, close visible), event log, main menu ↔ continue, dialog with a long text at 320×568, 640×320 and 1280×720 (title and buttons stay on screen, text scrolls, closes) |
+| Events menu | **Pass** | opens at the edge, header button visible after scrolling, closes, HUD reflows |
+| Photo mode hide / restore | **Pass** | hide → “Show UI” visible → restore, twice; photo camera position unchanged |
+| Landscape / portrait / sizes | **Pass after fixes** | Found and fixed during this run: (1) at 640×320 the events sheet squeezed the centre column to ~60 px; the HUD now switches to the compact row layout there. (2) On the smallest landscape phones (533–568×320) the events sheet now sits at the right edge, above the brake lever. (3) The menu sheet half-covered the clock row in portrait and the station card on tablets; it now starts below them. (4) The “⚙ Events” tab covered the station card; it now flows in the right column and hides while a menu is open. (5) At 320×568 the events sheet hid the banner; its height is now computed from the room under the HUD. (6) After a rainy trip, a new journey with the same train kept the old drops on a dry windscreen; the glass is now cleared at journey start. |
+| Regression (basic, mobile, landscape journeys) | **Pass** | no page errors |
+| Test APK | **Pass (page only)** | rebuilt and signed; the inlined page from the APK runs offline: 0 network requests, 0 errors, fonts inlined, rain drops on the cab glass. Not installed on a device here |
+
+### Limits (honest)
+* All of the above was checked in a software renderer, not on a phone. The wiper and rain timing was verified by stepping the
+  simulation, because the software renderer runs slower than real time. Smoothness on real devices still needs checking.
+* Rain drops are drawn into one 512 px canvas texture per windscreen. On a large tablet the drops are slightly soft.
+* Roads are generated per chunk. Beyond the loaded land (~1 km to each side) they continue only as far as the terrain is
+  built, and they fade into the distance fog rather than ending visibly.

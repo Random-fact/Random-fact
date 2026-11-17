@@ -593,5 +593,6 @@
 "ЖУРНАЛ ПОДІЙ": "EVENT LOG",
 "НАЛАШТУВАННЯ": "SETTINGS",
 "Гра зберігається автоматично. Клавіші: ↑↓ тяга, Пробіл гальмо, X екстрено, H сигнал, L фари, K двірники, C камера, 1–9 і 0 камери (0 — карта), V сховати HUD, P пауза, M музика, G круїз-контроль, J стрілка, R скинути камеру, Esc меню.": "The game saves automatically. Keys: ↑↓ throttle, Space brake, X emergency, H horn, L lights, K wipers, C camera, 1–9 and 0 cameras (0 — map), V hide HUD, P pause, M music, G cruise control, J switch, R reset camera, Esc menu.",
-"Симулятор залізничних подорожей": "Train journey simulator"
+"Симулятор залізничних подорожей": "Train journey simulator",
+"Повернути меню": "Show UI"
 }
