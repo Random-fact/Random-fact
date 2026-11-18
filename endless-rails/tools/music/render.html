@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Endless Rails music renderer</title>
+<!-- Renders the game's music into seamless loops (offline, faster than real time). Driven by render.js. -->
+<script src="theme_source.js"></script>
+<script src="legacy_tracks.js"></script>
+<script>
+const SR = 48000;
+/* reproducible random numbers (noise offsets, reverb impulse, melodic choices of the older tracks) */
+function seed(n) { let s = n >>> 0; Math.random = () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+/* the part rendered after the loop end (releases, reverb and echo tails) is added onto the loop start, so playing the
+   result in a loop sounds exactly like the music continuing; then the loop is scaled to the common loudness */
+async function finish(off, loopS, target) {
+  const buf = await off.startRendering(), n = Math.round(loopS * SR), out = [];
+  for (let c = 0; c < 2; c++) { const d = buf.getChannelData(c), o = new Float32Array(n); o.set(d.subarray(0, n)); for (let i = n; i < d.length; i++) o[(i - n) % n] += d[i]; out.push(o); }
+  let ss = 0, pk = 0; for (const o of out) for (let i = 0; i < n; i++) { ss += o[i] * o[i]; pk = Math.max(pk, Math.abs(o[i])); }
+  const rms = Math.sqrt(ss / (2 * n)), g = Math.min(Math.pow(10, target / 20) / rms, .89 / pk);
+  const pcm = new Int16Array(n * 2); for (let i = 0; i < n; i++) for (let c = 0; c < 2; c++) pcm[i * 2 + c] = Math.round(Math.max(-1, Math.min(1, out[c][i] * g)) * 32767);
+  let s = ''; const u8 = new Uint8Array(pcm.buffer); for (let i = 0; i < u8.length; i += 32768) s += String.fromCharCode.apply(null, u8.subarray(i, i + 32768));
+  return { samples: n, rmsDb: +(20 * Math.log10(rms * g)).toFixed(2), peak: +(pk * g).toFixed(3), gainDb: +(20 * Math.log10(g)).toFixed(2), b64: btoa(s) };
+}
+/* main theme: the composition code exactly as written (30 bars at 96 BPM = 75 s), started at 0 with full level */
+window.renderTheme = async target => {
+  seed(1); const loop = 75, tail = 10, off = new OfflineAudioContext(2, (loop + tail) * SR, SR), th = new EndlessRailsTheme(off, { volume: 0.8 });
+  th.playing = true; th.n = 0; th.t0 = 0; th.out.gain.value = th.opts.volume; th.scheduleUntil(loop);
+  return finish(off, loop, target);
+};
+/* older tracks: whole progressions, with the game's echo send (delay 0.42 s, feedback 0.42, low-pass 2.2 kHz) */
+window.renderLegacy = async (id, bars, target) => {
+  seed(7 + id.length * 13); const d = LTRACKS[id], barLen = 240 / d.bpm, loop = bars * barLen, tail = 14, off = new OfflineAudioContext(2, Math.ceil((loop + tail) * SR), SR);
+  const wb = off.createBuffer(1, SR * 2, SR), w = wb.getChannelData(0); for (let i = 0; i < w.length; i++) w[i] = Math.random() * 2 - 1;
+  Legacy.ctx = off; Legacy.white = wb;
+  const dl = off.createDelay(1.5); dl.delayTime.value = .42; const fb = off.createGain(); fb.gain.value = .42; const lp = off.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200;
+  dl.connect(lp); lp.connect(fb); fb.connect(dl); const send = off.createGain(); send.gain.value = .55; send.connect(dl); lp.connect(off.destination);
+  const bus = off.createGain(); bus.connect(off.destination); bus.connect(send);
+  const t = { id, bus, def: d, bar: 0 }; for (let b = 0; b < bars; b++) { Legacy.bar(t, b * barLen); t.bar++; }
+  const r = await finish(off, loop, target); r.loopS = loop; return r;
+};
+</script>

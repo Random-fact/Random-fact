@@ -600,5 +600,12 @@
 "Вийти": "Exit",
 "Порада": "Tip",
 "Запуск графіки…": "Starting graphics…",
-"Підготовка кабіни…": "Preparing the cab…"
+"Підготовка кабіни…": "Preparing the cab…",
+"Голос оголошень": "Announcement voice",
+"Двигун": "Engine",
+"Колеса й рейки": "Wheels and rails",
+"Гальма й повітря": "Brakes and air",
+"Двері й сигнали кабіни": "Doors and cab alerts",
+"Природа й станції": "Nature and stations",
+"Інший транспорт": "Other traffic"
 }

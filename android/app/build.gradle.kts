@@ -12,10 +12,11 @@ fun prop(k: String): String = (findProperty(k) as String?)?.trim().orEmpty()
 val testAppId = "ca-app-pub-3940256099942544~3347511713"
 val testRewardedId = "ca-app-pub-3940256099942544/5224354917"
 
-/** Builds assets/index.html from the game page: three.js and the fonts are inlined, so the app runs fully offline. */
+/** Builds assets/index.html from the game page (three.js and the fonts inlined) and copies assets/music: the app runs fully offline. */
 abstract class GameAssetTask : DefaultTask() {
     @get:InputFile abstract val gameHtml: RegularFileProperty
     @get:InputDirectory abstract val vendorDir: DirectoryProperty
+    @get:InputDirectory abstract val musicDir: DirectoryProperty
     @get:OutputDirectory abstract val outputDir: DirectoryProperty
 
     @TaskAction
@@ -47,12 +48,16 @@ abstract class GameAssetTask : DefaultTask() {
         val out = outputDir.get().asFile
         out.mkdirs()
         File(out, "index.html").writeText(html, Charsets.UTF_8)
+        // the music: prepared Ogg Opus loops, loaded by the page from music/*.ogg
+        val mOut = File(out, "music"); mOut.mkdirs()
+        musicDir.get().asFile.listFiles { f -> f.name.endsWith(".ogg") }?.forEach { it.copyTo(File(mOut, it.name), overwrite = true) }
     }
 }
 
 val generateGameAsset = tasks.register<GameAssetTask>("generateGameAsset") {
     gameHtml.set(rootProject.layout.projectDirectory.file("../endless-rails/src/game.html"))
     vendorDir.set(rootProject.layout.projectDirectory.dir("vendor"))
+    musicDir.set(rootProject.layout.projectDirectory.dir("../endless-rails/src/music"))
     outputDir.set(layout.buildDirectory.dir("generated/gameAssets"))
 }
 

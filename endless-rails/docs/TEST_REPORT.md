@@ -379,3 +379,103 @@ Device in the screenshots: about 834×375 CSS px landscape. All checks below wer
     at 51 MB.
   * Regression: pause in menus, UI scenarios at 834×375 and 390×844, dialogs, continue, desktop journey.
 * Not checked: the sound on a real phone (only the offline render and the browser's audio clock were measured).
+
+## Update 18 Nov 2026 (9): final technical audit, optimisation and world quality
+Backup before the stage: git tag `backup-before-final-audit` (commit a90dc98).
+
+### Audit
+Four parallel code audits (world placement, audio, memory/lifecycle/per-frame cost, traffic/people/cameras), each
+finding checked against the code and, where possible, measured with the game's own code. The fixes below come from them.
+
+### Bugs fixed
+* **Train driving into a volcano with a town inside.** A volcano's position was fixed once from the route as it was;
+  flipping a switch re-routes the line beyond the junction, so the new line could run through the cone (in a simulation
+  57 of 114 cases with a flip before a volcano). Now: exclusion zones — a volcano is placed only where no point of the
+  line within ±20 km comes closer than its foot (1.45·base radius) plus 700 m, and away from other landmarks; the
+  spaceport likewise (1250 m, ±15 km). After a switch flip, landmarks beyond the junction are placed again against
+  the new route. Check (4 seeds, 14 regions each, then 4 switch flips): 0 landmarks closer than allowed, before and
+  after flips; the closest is 1.34× the exclusion radius.
+* **Track positions became NaN** after a switch flip at a junction beyond the computed part of the route (the arrays
+  were grown with holes). Rerouting now only shortens.
+* **All people were drawn black**: their colour buffer was created with size 0. Fixed (also every passenger before).
+* **Alighting passengers floated** 1.3 m in the air behind the platform; they now walk to the station entrance at
+  the back edge of the platform.
+* **Cars through city stations**: traffic lanes are cut where they would cross the station area (as the drawn streets).
+* **Cars queuing on the rails** at city level crossings behind a red light: no traffic light at the junction right
+  behind a crossing.
+* **Traffic lights missing** at most junctions: 40 poles (10 junctions) go to the nearest lit junctions within 320 m.
+* **Town stations**: cars drive on the drawn streets (±34 / ±80 m), not on the verge.
+* **Village houses and industrial objects on crossing roads**; **trees inside village houses**: lots and objects keep
+  the crossing road free; no wild trees in the rows of houses.
+* **Chase / orbit camera thrown onto the mountain** when turned inside a tunnel: the camera stays inside the tube's
+  cross-section. Tunnel haze is dark instead of bright sky colour.
+* **'Carriage window' camera inside a seated passenger's head**: that window seat stays free.
+* **Station-name textures and materials leaked** on every new journey / language change and could show the previous
+  language; volcano / spaceport meshes and the rocket were not disposed on reset. Fixed.
+
+### Audio (rebuilt)
+* One audio graph with categories, each with its own volume in Settings → Sound: engine, wheels and rails, horn,
+  brakes and air, doors and cab alerts, nature and stations, weather, other traffic, natural events, plus announcement
+  voice (translations in all 10 languages).
+* Volume applied once (one-shots no longer multiplied by the slider and the bus again); all volume changes ramp.
+* Nothing is generated while the game is held (pause, menus): measured 0 audio nodes in 3 s of pause.
+* Page hidden: the train sound is held and speech stopped before the context is suspended (no burst on return).
+* Speech: a station announcement may interrupt, other messages queue behind it; music (−8 dB) and surroundings
+  (−4 dB) duck under speech; nothing is spoken while held.
+* One-shot voices capped at 32 (also joints, clanks, other trains' horns); interface sounds are never dropped.
+* Thunder no longer cut off; horn preview in Settings audible; external cameras far from the train hear it quieter;
+  each new journey starts from silence; a failing audio start can no longer break the game loop.
+
+### Music from prepared files
+* `src/music/*.ogg`: the main theme (from its composition code, unchanged) and the four older tracks, rendered once
+  offline into seamless loops (Ogg Opus 128 kbit/s, 48 kHz, −20 dBFS RMS; 6.0 MB together). Nothing is synthesized at
+  run time any more. Chromium decodes them sample-exactly (test impulse at sample 1000 decodes at 1000; lengths exact);
+  the jump at each loop seam is 0.03–1.2× an ordinary sample step (no click).
+* One track plays at a time (12 rapid "next track" requests → 1 voice, 1 decoded buffer); 2.5 s crossfades; at most the
+  playing and the next track stay decoded; failed loads back off (20 s, 40 s … then stop).
+* Packaged by Gradle and by the test-APK script into `assets/music`. Regenerate with `tools/music/render.js`.
+
+### Background world generation
+* Chunks beyond the visible window are pre-built while the train stands, while paused (no game time passes) and with
+  spare frame time while moving; they wait outside the scene and are taken when the train gets there.
+  Priorities: chunks at the train (at once) → visible window nearest first → pre-generation. Main menu: none.
+* Budget: by mode (stopped 7 ms, pause 4 ms, photo 3 ms, moving 4–8 ms growing with speed) × headroom from frame
+  rate and battery (Battery API where available); cache size 3–8 chunks by tier, halved on ≤ 2 GB RAM or low battery.
+* Measured: 5 chunks pre-built in 10 s of pause with the train and the clock unchanged; cache hits when driving on;
+  nothing built in the main menu.
+* Settings that change chunks (quality tier, language, train) rebuild them one by one instead of all in one frame.
+* A finished chunk no longer keeps its build buffers (they stayed referenced through a closure).
+
+### Less work per frame
+Rain and snow (8000 lines / points) not drawn in dry weather; particle systems skip their slots when nothing is alive;
+people meshes are not uploaded when nobody is on a platform, and crowds of stations left behind are dropped;
+rendering at half rate while paused; fewer audio automation events per second.
+
+### World
+* Cities: some blocks are squares with a fountain (centre), parks (lawn, paths, trees, benches, lamps) or car parks
+  (bay lines, parked cars); zebra crossings at the central junctions; bus stops with shelters every second block.
+* People: shoulders-wide torso with a neck, oval head, hair in natural colours (or a hard hat), arms swinging against
+  the legs (the hand with a suitcase stays down), everyday clothing colours, smooth turning, step rate tied to speed.
+
+### Checks
+* Regression: UI scenarios at 834×375 and 390×844 (no overlaps), dialogs, continue/save, pause in menus, menu
+  scroll, photo-mode translations in 9 languages, sound settings with 15 sliders (en, de: no overflow), driver lessons.
+* Long run 350 km: JS heap flat at 30 MB (73 MB in the same test before this stage), geometries 78–104.
+* Same seed and places against the previous build (10 views): draw calls −11 … 0, triangles lower or equal
+  (dry weather), one view +4.7 k (people).
+* Offline APK served like the app's asset loader: 0 network requests, 0 errors, theme playing from assets/music.
+* All measured in Chromium with software rendering (SwiftShader): frame times there say nothing about phones and are
+  not reported; FPS, GPU load and battery were not measured on a device.
+
+### Not done in this stage (remaining)
+* No worker threads: the generator shares the whole world state and three.js objects must be created on the main
+  thread, so background generation is time-sliced on the main thread; GPU upload of a pre-built chunk still happens
+  when it enters the scene.
+* Train and carriage models were not remodelled; villages got fixes but no new buildings (shops, farms, bus stops);
+  no new road types (motorways, roundabouts, flyovers).
+* Known placement issues still open: city blocks can overlap on tight curves; tunnels can be cut through low ridges on
+  flat land; river valleys under bridges are rectangular and gorges have water; roads to farms/sawmills can end on a
+  slope; wildfire / landslide / tsunami events do not check what they land on; helicopters can fly through high peaks.
+* Traffic: side streets end next to the line (cars turn there), 90° turns at speed, no right of way at unlit junctions,
+  cars appear 170 m away in view. Cameras: no collision with buildings for cinematic shots at stations.
+* Not tested on a real phone.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build assets/index.html for the offline test APK: the game page with three.js and the fonts inlined.
+"""Build assets/index.html for the offline test APK: the game page with three.js and the fonts inlined, plus assets/music.
 (The Gradle build does the same in app/build.gradle.kts, task generateGameAsset.)"""
 import base64, json, os, sys
 here = os.path.dirname(os.path.abspath(__file__)); root = os.path.dirname(here)
@@ -30,3 +30,10 @@ html = html.replace(mark, bridge + '<script type="text/plain" id="er-three">' + 
 os.makedirs(os.path.dirname(dst), exist_ok=True)
 open(dst, 'w', encoding='utf-8').write(html)
 print('asset written:', dst, len(html.encode('utf-8')), 'bytes')
+
+# 3) the music files (prepared Ogg Opus loops) next to the page: assets/music/*.ogg
+import shutil
+msrc, mdst = os.path.join(os.path.dirname(os.path.abspath(src)), 'music'), os.path.join(os.path.dirname(dst), 'music')
+os.makedirs(mdst, exist_ok=True)
+for f in sorted(os.listdir(msrc)):
+    if f.endswith('.ogg'): shutil.copyfile(os.path.join(msrc, f), os.path.join(mdst, f)); print('music:', f, os.path.getsize(os.path.join(mdst, f)), 'bytes')

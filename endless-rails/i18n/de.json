@@ -600,5 +600,12 @@
 "Вийти": "Beenden",
 "Порада": "Tipp",
 "Запуск графіки…": "Grafik wird gestartet…",
-"Підготовка кабіни…": "Führerstand wird vorbereitet…"
+"Підготовка кабіни…": "Führerstand wird vorbereitet…",
+"Голос оголошень": "Ansagestimme",
+"Двигун": "Motor",
+"Колеса й рейки": "Räder und Schienen",
+"Гальма й повітря": "Bremsen und Druckluft",
+"Двері й сигнали кабіни": "Türen und Führerstandssignale",
+"Природа й станції": "Natur und Bahnhöfe",
+"Інший транспорт": "Anderer Verkehr"
 }

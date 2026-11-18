@@ -1,0 +1,37 @@
+{
+ "theme": {
+  "samples": 3600000,
+  "seconds": 75,
+  "rmsDb": -20,
+  "peak": 0.431,
+  "bytes": 1327919
+ },
+ "drift": {
+  "samples": 3413333,
+  "seconds": 71.1111,
+  "rmsDb": -20,
+  "peak": 0.515,
+  "bytes": 1102457
+ },
+ "lofi": {
+  "samples": 3736216,
+  "seconds": 77.8378,
+  "rmsDb": -20,
+  "peak": 0.473,
+  "bytes": 1130491
+ },
+ "night": {
+  "samples": 3665455,
+  "seconds": 76.3636,
+  "rmsDb": -20,
+  "peak": 0.499,
+  "bytes": 1505662
+ },
+ "cine": {
+  "samples": 3177931,
+  "seconds": 66.2069,
+  "rmsDb": -20,
+  "peak": 0.414,
+  "bytes": 937531
+ }
+}

@@ -600,5 +600,12 @@
 "Вийти": "Quitter",
 "Порада": "Astuce",
 "Запуск графіки…": "Démarrage des graphismes…",
-"Підготовка кабіни…": "Préparation de la cabine…"
+"Підготовка кабіни…": "Préparation de la cabine…",
+"Голос оголошень": "Voix des annonces",
+"Двигун": "Moteur",
+"Колеса й рейки": "Roues et rails",
+"Гальма й повітря": "Freins et air",
+"Двері й сигнали кабіни": "Portes et alertes de cabine",
+"Природа й станції": "Nature et gares",
+"Інший транспорт": "Autre trafic"
 }
