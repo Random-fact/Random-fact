@@ -523,3 +523,13 @@ rendering at half rate while paused; fewer audio automation events per second.
 * Not done: rivers do not change the shape of the far ground between the far-layer rings (narrow rivers far away are
   coarse or invisible); no road tunnels or serpentines with hairpins; a few roads still run straight on flat land
   for a long way; tunnels can still be placed under low ridges on flat land. Not tested on a phone.
+
+## Update 18 Nov 2026 (11): landscape screen by default
+* Android: the activity starts in landscape (`sensorLandscape`: either way round, following the sensor) instead of
+  following the phone. Checked in the built APK manifest (screenOrientation = 6).
+* Settings → Graphics → Screen orientation: "Landscape" (default) or "Like the phone (portrait too)". The choice is
+  applied at once through the app (`AndroidApp.setOrientation`) and at every start; all portrait layouts stay available.
+* Browser / standalone page: the game asks for a landscape lock; browsers grant it only in full screen, so it is
+  requested again on entering full screen. Outside full screen a browser keeps following the phone.
+* Check: default → native "land" + landscape lock requested; switching the setting → native "auto" + unlock.
+  Labels translated in all 10 languages. Not tested on a phone.

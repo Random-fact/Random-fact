@@ -607,5 +607,8 @@
 "Гальма й повітря": "Brakes and air",
 "Двері й сигнали кабіни": "Doors and cab alerts",
 "Природа й станції": "Nature and stations",
-"Інший транспорт": "Other traffic"
+"Інший транспорт": "Other traffic",
+"Орієнтація екрана": "Screen orientation",
+"Горизонтальна": "Landscape",
+"Як у телефоні (також вертикальна)": "Like the phone (portrait too)"
 }

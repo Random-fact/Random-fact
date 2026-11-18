@@ -2,6 +2,7 @@ package com.endlessrails.game;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.content.res.AssetManager;
 import android.graphics.Insets;
 import android.net.Uri;
@@ -235,6 +236,15 @@ public class MainActivity extends Activity {
 
     /** Small native helpers for the page. */
     private class App {
+        /** Screen orientation chosen in the game's settings: "land" (default: landscape, either way round by the sensor)
+         *  or "auto" (follows the phone, portrait included). The manifest starts the game in landscape. */
+        @JavascriptInterface
+        public void setOrientation(final String mode) {
+            ui.post(new Runnable() { @Override public void run() {
+                setRequestedOrientation("auto".equals(mode) ? ActivityInfo.SCREEN_ORIENTATION_FULL_USER : ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+            } });
+        }
+
         @JavascriptInterface
         public void vibrate(int ms) {
             try {
