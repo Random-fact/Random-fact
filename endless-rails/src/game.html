@@ -3878,7 +3878,9 @@ const Music = {
   load(id) {
     if (this.bufs.has(id)) return Promise.resolve(this.bufs.get(id));
     if (this.loading.has(id)) return this.loading.get(id);
-    const p = fetch('music/' + TRACKS[id].file + '.ogg').then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+    /* a standalone page can carry the music inside (window.ER_MUSIC: data URLs); otherwise the files next to the page */
+    const emb = window.ER_MUSIC && window.ER_MUSIC[TRACKS[id].file];
+    const p = fetch(emb || 'music/' + TRACKS[id].file + '.ogg').then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
       .then(ab => new Promise((res, rej) => this.ctx.decodeAudioData(ab, res, rej)))
       .then(buf => { this.loading.delete(id); this.bufs.set(id, buf); this.trim(); return buf; })
       .catch(e => { this.loading.delete(id); console.warn('music: ' + id + ' not loaded (' + (e && e.message || e) + ')'); return null; });

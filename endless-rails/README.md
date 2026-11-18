@@ -6,6 +6,7 @@ Endless train-driving game in one HTML5/WebGL page (three.js r128) plus its musi
 |---|---|
 | `src/game.html` | the complete game (all code, styles and the 10 languages) — serve the `src/` folder over http(s) or wrap it (see `../android`); opened as a local file the game runs without music |
 | `src/music/` | the music: prepared seamless loops (Ogg Opus) loaded by the game; `music.json` lists lengths and loudness |
+| `tools/build_standalone.py` | builds one self-contained page (three.js, fonts and music inside, ~10 MB) that runs offline from a file |
 | `tools/music/` | `render.js` + `render.html` re-render the music files from their composition code (`theme_source.js`, `legacy_tracks.js`); see its README |
 | `i18n/` | translation catalogue: `source_uk.json` (609 Ukrainian source strings) and `<lang>.json` per language, `TRANSLATOR_BRIEF.md` (rules + glossary), `check.py` (validator) |
 | `tools/build_i18n.py` | merges the translations into `src/game.html` — run it after editing any `i18n/*.json` |
