@@ -11,7 +11,7 @@ Date: 16 Nov 2026 · Source: `endless-rails/src/game.html` (single self-containe
 * Ads were exercised only through a **mock of the Android bridge inside the test harness**. The game never simulates an ad or a
   reward on its own: without the native SDK, `Ads.enabled()` is false and all extras are simply free.
 * Translations (9 languages) were produced by AI translators working from a glossary and were checked automatically
-  (all 599 keys, placeholders, no Cyrillic left on any screen). **A native-speaker review is recommended** before release.
+  (all 602 keys, placeholders, no Cyrillic left on any screen). **A native-speaker review is recommended** before release.
 
 ## Bugs found and fixed in this update
 | # | Problem | Root cause → fix |
@@ -199,3 +199,20 @@ Device in the screenshots: about 834×375 CSS px landscape. All checks below wer
 * Check at 390×844, 834×375, 360×640 and 1280×720: scrolled down to the trains, picked a train, then a mode. The list stayed
   where it was. At 390×844 it moved up 48 px only because the list became shorter (the HS train has fewer options) and the
   browser clamps to the new end. The section strip kept its position; switching screens started at the top.
+
+## Update 18 Nov 2026 (3): loading screen
+* Before: an almost empty black screen with a thin bar that moved in four jumps (5 → 30 → 75 → 100 %). The heaviest part,
+  building the world, ran as one block, so on a phone the screen could stand still for seconds. On the first start the
+  graphics were initialised before the loading screen appeared, so the menu froze after the tap.
+* Now:
+  * The loading screen appears immediately; graphics start-up is its first step.
+  * The world is built one chunk per step with a painted frame in between, so the bar, the percentage and the step text
+    really move: 10 % → 20 % → about 12 chunk steps up to 82 % → 92 % “Preparing the cab” → 100 % after the first frame
+    (shader compile) is rendered.
+  * Design: a line with the mode and the train (or “Driver training”), an animated track with a train, the step text with
+    a percentage, and a “Tip” card whose tip changes every 5 s. Movement uses compositor animations that keep running
+    while the main thread is busy, and is switched off for “reduce motion”. Safe areas are respected; a compact layout is
+    used on low landscape screens.
+  * Translations: 3 new texts in 9 languages (catalogue 602).
+* Check: first start at 834×375 (uk), 390×844 (en, schedule + HS), 1280×720 (ja, lesson), 568×320 (de). Continuing a
+  saved journey restores position, mode and train; a lesson starts. Desktop/phone regression passes with no page errors.
