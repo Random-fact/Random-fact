@@ -272,3 +272,26 @@ Device in the screenshots: about 834×375 CSS px landscape. All checks below wer
   * Regression (desktop / phone journeys, dialogs, continue, lessons, full scenarios at 834×375 and 390×844).
   * Offline APK page: 0 requests, 0 errors.
   * The terrain mesh grew by about 9 k triangles in total (≈ +30 % terrain vertices); draw calls unchanged.
+
+## Update 18 Nov 2026 (6): the train stops and falls silent in menus
+* Causes:
+  * The in-game menu (MENU button) did not pause the game at all, so the train really kept driving under it.
+  * In the main menu, in settings and while paused, the simulation did stop, but the continuous train sounds
+    (motor, wheels, wind, surroundings) kept playing at the speed the train had.
+  * After leaving a lesson for the menu, no frame updated the sound any more, so the last train sound went on.
+* Fixes:
+  * The game stands still whenever the in-game menu, settings, the event log or the main menu covers it. The player's
+    own Pause is kept separately: closing a menu does not unpause a game the player had paused.
+  * The events sandbox panel is a control panel for driving and does not stop the train.
+  * While the game stands still, the train and surroundings sound buses fade out in about 0.3 s, the horn stops and a
+    station announcement being spoken is cancelled. Interface sounds and music stay.
+  * With no journey running, the train sound stays silent.
+* Check (834×375):
+  * Driving at 72 km/h, then the in-game menu: the position did not change in 1.5 s and the train sound was 0.
+    After closing, the train drove on and the sound came back.
+  * Main menu: the train stands still and is silent; Continue resumes.
+  * The player's pause survived opening and closing the menu and settings.
+  * Settings and the event log pause and resume.
+  * Lesson → menu: silent.
+  * Events panel: the train keeps driving.
+  * Regression and full scenarios pass.

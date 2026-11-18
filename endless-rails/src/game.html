@@ -3330,7 +3330,14 @@ const Sound = {
       if (!q) S.cancel(); S.speak(u);
     } catch (e) { }
   },
-  setVols() { if (!this.ok) return; const v = SettingsManager.v, m = v.master ?? 1; this.vol.sfx = v.sfx; this.vol.amb = v.amb; this.vol.music = v.musicOn ? v.music : 0; this.sfx.gain.value = v.sfx; this.amb.gain.value = v.amb; this.mus.gain.value = this.vol.music; this.master.gain.value = m; this.musM.gain.value = m; this.uiG.gain.value = m * (v.ui ?? .6); },
+  setVols() { if (!this.ok) return; const v = SettingsManager.v, m = v.master ?? 1, t = this.ctx.currentTime; this.vol.sfx = v.sfx; this.vol.amb = v.amb; this.vol.music = v.musicOn ? v.music : 0;
+    for (const [g, val] of [[this.sfx, this.held ? 0 : v.sfx], [this.amb, this.held ? 0 : v.amb]]) { g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(val, t); } this.mus.gain.value = this.vol.music; this.master.gain.value = m; this.musM.gain.value = m; this.uiG.gain.value = m * (v.ui ?? .6); },
+  /* paused game or a menu over it: the train, the line and the surroundings fade out in ~0.3 s and come back on resume */
+  hold(on) { if (!this.ok || this.held === on) return; this.held = on; const t = this.ctx.currentTime, v = SettingsManager.v;
+    for (const [g, val] of [[this.sfx, v.sfx], [this.amb, v.amb]]) { g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t); g.gain.setTargetAtTime(on ? 0 : val, t, .1); }
+    if (on) { this.horn(false); this.hush(); } },
+  /* stops a station announcement that is being spoken (leaving for the menu, pausing) */
+  hush() { try { if (window.AndroidTTS && AndroidTTS.stop) AndroidTTS.stop(); else if ('speechSynthesis' in window) speechSynthesis.cancel(); } catch (e) { } this.spkN = 0; },
   /* interface sounds: 0 tap, 1 confirm / next, 2 reward / unlock, 3 error */
   uiTone(k) {
     this.init(); if (!this.ok) return; const c = this.ctx, t = c.currentTime, d = this.uiG;
@@ -5530,7 +5537,7 @@ const UI = {
     const L = typeof EventLog !== 'undefined' ? EventLog.list : [], el = $('evlist'); el.innerHTML = '';
     if (!L.length) el.textContent = _T('Подій ще не було.');
     for (const e of L.slice().reverse()) { const d = document.createElement('div'); d.innerHTML = '<b></b> <small></small><br><span></span>'; d.children[0].textContent = _T(e.name); d.children[1].textContent = e.time + ' · ' + _T(e.rar); d.children[3].textContent = _T(e.msg) + (e.desc ? ' — ' + _T(e.desc) : ''); el.appendChild(d); }
-    $('evlog').classList.add('open'); $('more').classList.remove('open'); syncSheets(); G.paused = true;
+    $('evlog').classList.add('open'); $('more').classList.remove('open'); syncSheets();
   },
   sync() { this.showThr(this.G.thrT); this.showBrk(this.G.brkT); },
   act(a) {
@@ -5543,12 +5550,12 @@ const UI = {
       case 'more': $('more').classList.toggle('open'); if ($('more').classList.contains('open')) Dev.show(false); layoutVars(); break;
       case 'rev': G.reverse(); break;
       case 'cabin': G.cabinLight = !G.cabinLight; this.mark('cabin', G.cabinLight); break;
-      case 'pause': G.paused = !G.paused; this.mark('pause', G.paused); break;
+      case 'pause': G.userPause = !G.userPause; this.mark('pause', G.userPause); break;
       case 'hud': document.body.classList.toggle('nohud'); $('more').classList.remove('open'); syncSheets(); break;
       case 'music': SettingsManager.v.musicOn = !SettingsManager.v.musicOn; Sound.setVols(); this.mark('music', !SettingsManager.v.musicOn); this.banner(SettingsManager.v.musicOn ? 'Музика увімкнена' : 'Режим без музики'); break;
       case 'track': if (SettingsManager.v.musicOn) { const ids = Object.keys(TRACKS).filter(i => i !== Music.last); Music.play(ids[Math.floor(Math.random() * ids.length)]); this.banner('♪ ' + Music.name); } break;
-      case 'settings': SettingsManager.build($('setlist'), (k, v) => G.applySetting(k, v), $('settabs')); $('settings').classList.add('open'); $('more').classList.remove('open'); G.paused = true; break;
-      case 'closeset': $('settings').classList.remove('open'); G.paused = false; this.mark('pause', false); G.save(); Profile.save(); break;
+      case 'settings': SettingsManager.build($('setlist'), (k, v) => G.applySetting(k, v), $('settabs')); $('settings').classList.add('open'); $('more').classList.remove('open'); break;
+      case 'closeset': $('settings').classList.remove('open'); G.save(); Profile.save(); break;
       case 'photo': CamMgr.set(8); $('more').classList.remove('open'); break;
       case 'cruise': G.cruise = !G.cruise; if (G.cruise) { G.cruiseV = Math.max(G.phys.v, 22); } this.mark('cruise', G.cruise); this.banner(G.cruise ? 'Круїз-контроль' : 'Круїз-контроль вимкнено'); break;
       case 'camreset': CamMgr.reset(); break;
@@ -5560,7 +5567,7 @@ const UI = {
       case 'cdn': case 'cup': if (Tutor.on) { this.banner(_T('Під час уроку склад змінити не можна')); break; } if (a === 'cup' && G.train.nc >= Unlocks.maxCars()) { this.banner(_T('Довші склади відкриваються в розділі «Додатково»')); break; } G.setCars(G.train.nc + (a === 'cup' ? 1 : -1)); break;
       case 'tomenu': G.toMenu(); break;
       case 'evlog': this.showLog(); break;
-      case 'closeev': $('evlog').classList.remove('open'); G.paused = false; this.mark('pause', false); break;
+      case 'closeev': $('evlog').classList.remove('open'); break;
       case 'newtrip': G.newTrip(); $('settings').classList.remove('open'); break;
     }
     syncSheets();
@@ -5645,7 +5652,7 @@ const Menu = {
     const m = m0; m.innerHTML = ''; if (!same) m.scrollTop = 0; (this['s_' + this.scr] || this.s_journey).call(this, m);
   },
   cont() {
-    if (G.running && G.mode !== 'tutorial') { this.close(); G.inMenu = false; G.paused = false; UI.mark('pause', false); Sound.init(); return; }
+    if (G.running && G.mode !== 'tutorial') { this.close(); G.inMenu = false; G.userPause = false; UI.mark('pause', false); syncSheets(); Sound.init(); return; }
     const sv = SaveSystem.read(); if (sv) startGame({ save: sv });
   },
   h(m, t, lead) { m.appendChild(el('h2', null, _T(t))); if (lead) m.appendChild(el('p', 'lead', _T(lead))); },
@@ -5886,7 +5893,8 @@ const G = {
   toMenu() {
     $('more').classList.remove('open'); $('settings').classList.remove('open'); $('evlog').classList.remove('open'); Dev.show(false); syncSheets();
     if (Tutor.on || G.mode === 'tutorial') { Tutor.end(); Tutor.restore(); G.running = false; G.mode = 'free'; }
-    else if (G.running) { G.save(); G.paused = true; G.inMenu = true; }
+    else if (G.running) { G.save(); G.inMenu = true; G.paused = true; }
+    Sound.hold(true);
     G.horn = false; Sound.horn(false); Profile.save(); Menu.show(Menu.scr === 'lang' ? 'journey' : Menu.scr);
   },
   save() {
@@ -5976,7 +5984,9 @@ function resize() {
 /* height of the bottom control area, measured, so the HUD never runs under the levers or the buttons */
 /* body classes for the side sheets: moreopen (in-game menu), sideopen (either sheet, the HUD makes room) */
 function syncSheets() { const b = document.body, m = $('more'), d = $('dev'), mo = !!(m && m.classList.contains('open')), dv = !!(d && d.classList.contains('open') && Dev.on && Dev.on());
-  b.classList.toggle('moreopen', mo); b.classList.toggle('sideopen', mo || dv); }
+  b.classList.toggle('moreopen', mo); b.classList.toggle('sideopen', mo || dv);
+  /* the game stands still while any menu covers it (in-game menu, settings, event log, main menu) or the player paused it */
+  if (typeof G !== 'undefined' && G.running) { const op = id => { const e = $(id); return !!(e && e.classList.contains('open')); }; G.paused = !!G.userPause || mo || op('settings') || op('evlog') || !!G.inMenu; if (typeof Sound !== 'undefined') Sound.hold(G.paused); } }
 function layoutVars() {
   syncSheets(); const ctl = $('ctl'), st = document.documentElement.style; if (!ctl) return;
   const H = window.innerHeight, vis = getComputedStyle(ctl).display !== 'none' && !document.body.classList.contains('photoMode');
@@ -6048,7 +6058,7 @@ function startGame(o) {
       const lay = save ? (save.layout || 'dense') : ['tutorial', 'schedule', 'challenge'].includes(G.mode) ? 'sparse' : (o.layout || 'dense');
       resetWorld(save ? save.seed : G.mode === 'tutorial' ? 9100 + (o.lesson || 0) * 17 : ((Math.random() * 2e9) | 0) + 1, save && save.rt, lay);
       Object.assign(p, { v: 0, thrT: 0, throttle: 0, brake: 0, emerg: false, p: 5, acc: 0, dist: 0 });
-      G.thrT = G.brkT = 0; G.lights = false; G.wipers = false; G.cruise = false; G.paused = false; G.t = 0; Stations.jt = 0; Stations.served = 0; G.revT = 0; G.fadeRev = 0; G.freezeTime = false; Challenge.reset();
+      G.thrT = G.brkT = 0; G.lights = false; G.wipers = false; G.cruise = false; G.paused = false; G.userPause = false; UI.mark('pause', false); G.t = 0; Stations.jt = 0; Stations.served = 0; G.revT = 0; G.fadeRev = 0; G.freezeTime = false; Challenge.reset();
       if (save) {
         p.s = save.s; p.dir = save.dir; p.v = save.v || 0; G.thrT = save.thr || 0; G.brkT = save.brk || 0; G.lights = !!save.lights; G.wipers = !!save.wipers; Env.clock = isFinite(save.clock) ? save.clock : 8.3; p.dist = save.dist || 0; Stations.jt = save.jt || 0; Stations.served = save.served || 0; G.cabinLight = save.cabin !== false; Weather.force(save.wx || 'clear'); p.throttle = G.thrT; p.brake = G.brkT;
         if (save.ch) { Challenge.n = save.ch.n || 0; Challenge.score = save.ch.score || 0; }
@@ -6103,7 +6113,7 @@ function camTunnel(G) {
 }
 function frame(now) {
   requestAnimationFrame(frame);
-  if (!G.running) { if (!G.idleDrawn) { G.idleDrawn = true; renderer.render(scene, camera); } return; }
+  if (!G.running) { Sound.hold(true); if (!G.idleDrawn) { G.idleDrawn = true; renderer.render(scene, camera); } return; }
   /* behind the main menu the paused world is redrawn at a third of the rate (saves battery) */
   if (G.inMenu && (G.menuF = (G.menuF || 0) + 1) % 3) { G.last = now; return; }
   GlowPts.begin();
@@ -6140,7 +6150,7 @@ function frame(now) {
   tr.items[0].g.getWorldPosition(G.mid); tr.pointAt(tr.length * .4, 0, 0, G.mid); sky.shadowTarget = G.mid;
   /* camera */
   const prev = G.prevCam.copy(camera.position);
-  CamMgr.update(dt, { train: tr, phys: p, sens: SettingsManager.v.sens, fov: SettingsManager.v.fov, t: G.t, speed: p.v, acc: p.acc, lat: G.lat || 0 });
+  CamMgr.update(dt, { train: tr, phys: p, sens: SettingsManager.v.sens, fov: SettingsManager.v.fov, t: G.t, speed: G.paused ? 0 : p.v, acc: G.paused ? 0 : p.acc, lat: G.paused ? 0 : G.lat || 0 });
   G.camVel.copy(camera.position).sub(prev).divideScalar(Math.max(dt, .001)); if (G.camVel.length() > 120) G.camVel.set(0, 0, 0);
   /* lights, wipers, details */
   const L = tr.loco, night = Math.max(Env.night, Env.tunnel * .8);
@@ -6168,7 +6178,7 @@ function frame(now) {
     G.prevV = p.v;
   }
   const zs = Rail.zoneAt(p.s), pts = (zs.kind === 'station' && Math.abs(Math.abs(p.s - zs.c) - (Rail.stl(zs).P + 150)) < 140) || (zs.kind === 'junction' && Math.abs(p.s - zs.sj) < 70);
-  Sound.update(dt, { axles: tr.axleW, lw, extK, jointed: vn1(p.s / 9000, Rail.seed + 41) <= .38 || bio.stf > .2, points: pts, comp: p.p < 4.9 && p.brake < .08 && !p.emerg, airPos: Aviation.loudPos, speed: p.v, thr: p.throttle, brakeF: (5 - p.p) / 5, inside: id === 'cab' ? 1 : id === 'roof' ? .3 : (id === 'walk' || id === 'pass') ? .7 : 0, cam: id === 'cab' ? 'cab' : (id === 'walk' || id === 'pass') ? 'pass' : 'ext', rain: Env.rain, wind: Env.wind, tunnel: Env.tunnel, bridge: bio.deck ? 1 : 0, near: clamp(1 - dist / 160, 0, 1) * (Passengers.list.length > 0 ? 1 : 0) * (.6 + Math.min(.8, Passengers.list.length / 70)), oth: RailTraffic.loud(camera.position), urban: bio.urban, road: Traffic.near, air: Math.max(Aviation.loud, Spaceport.launch ? .0 : 0), forest: bio.forest, day: Env.day, dp: G.dp || 0 });
+  Sound.hold(!!G.paused); Sound.update(dt, { axles: tr.axleW, lw, extK, jointed: vn1(p.s / 9000, Rail.seed + 41) <= .38 || bio.stf > .2, points: pts, comp: p.p < 4.9 && p.brake < .08 && !p.emerg, airPos: Aviation.loudPos, speed: p.v, thr: p.throttle, brakeF: (5 - p.p) / 5, inside: id === 'cab' ? 1 : id === 'roof' ? .3 : (id === 'walk' || id === 'pass') ? .7 : 0, cam: id === 'cab' ? 'cab' : (id === 'walk' || id === 'pass') ? 'pass' : 'ext', rain: Env.rain, wind: Env.wind, tunnel: Env.tunnel, bridge: bio.deck ? 1 : 0, near: clamp(1 - dist / 160, 0, 1) * (Passengers.list.length > 0 ? 1 : 0) * (.6 + Math.min(.8, Passengers.list.length / 70)), oth: RailTraffic.loud(camera.position), urban: bio.urban, road: Traffic.near, air: Math.max(Aviation.loud, Spaceport.launch ? .0 : 0), forest: bio.forest, day: Env.day, dp: G.dp || 0 });
   Music.update(dt, SettingsManager.v.musicOn);
   GlowPts.end(camera, renderer);
   renderer.render(scene, camera);
@@ -6191,7 +6201,7 @@ window.__bootGame = () => {
   }, 0));
   /* app lifecycle: save everything when the page is hidden or closed (Android: onPause / onStop) */
   const flush = () => { try { G.save(); Profile.save(true); } catch (e) { } };
-  document.addEventListener('visibilitychange', () => { if (document.hidden) { flush(); if (G.running && !G.inMenu) { G.paused = true; UI.mark('pause', true); G.autoPaused = true; } } else if (G.autoPaused) { G.autoPaused = false; } });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { flush(); if (G.running && !G.inMenu) { G.userPause = true; G.paused = true; UI.mark('pause', true); G.autoPaused = true; } } else if (G.autoPaused) { G.autoPaused = false; } });
   window.addEventListener('pagehide', flush); window.addEventListener('beforeunload', flush);
   window.__lifecycle = ev => { if (ev === 'pause') flush(); };
   /* Android back button / gesture: close the top layer; returns false when the app may exit */
