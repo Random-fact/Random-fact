@@ -189,3 +189,13 @@ Device in the screenshots: about 834×375 CSS px landscape. All checks below wer
   list when one is not in the catalogue, so this cannot slip through again.
 * Check: photo mode opened in en, ru, zh, ro, pt, es, fr, de, ja, with the panel shown and hidden. A scan of all visible text,
   titles and the weather list finds no Ukrainian text left (Russian shows Russian).
+
+## Update 18 Nov 2026 (2): menu no longer jumps to the top
+* Cause: every choice in the main menu (train, mode, cars, station spacing, language) rebuilt the screen and forced the
+  scroll position to the top; the horizontal section strip on phones jumped back to its start too.
+* Fix: a rebuild on the same screen restores the scroll position of the list and of the section strip. Switching to
+  another screen or opening the menu again starts at the top, as expected. The settings tabs and the language grid keep
+  their position the same way. The dialog's first button takes focus without scrolling anything.
+* Check at 390×844, 834×375, 360×640 and 1280×720: scrolled down to the trains, picked a train, then a mode. The list stayed
+  where it was. At 390×844 it moved up 48 px only because the list became shorter (the HS train has fewer options) and the
+  browser clamps to the new end. The section strip kept its position; switching screens started at the top.

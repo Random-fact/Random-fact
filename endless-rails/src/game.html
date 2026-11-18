@@ -524,6 +524,9 @@ function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>
 const pad2 = n => (n < 10 ? '0' : '') + n;
 
 /* ===== Settings ===== */
+/* remembers the scroll position of an element and of every scrolled container around it, so a list that is rebuilt
+   after a tap (choosing a train, a mode, a tab, a language) stays where the player was instead of jumping to the top */
+function keepScroll(el) { const L = []; for (let e = el; e && e !== document.body; e = e.parentElement) if (e.scrollTop || e.scrollLeft) L.push([e, e.scrollTop, e.scrollLeft]); return () => { for (const [e, t, l] of L) { e.scrollTop = t; e.scrollLeft = l; } }; }
 const SettingsManager = {
   defaults: { gfx: 'auto', sens: 1, fov: 70, dayMin: 30, master: 1, music: 0.55, sfx: 0.8, amb: 0.8, ui: 0.6, weather: 'auto', musicOn: true, speech: true, evVoice: true, horn: 'auto', railT: 'normal', mode: 'free', train: 'classic', liv: { classic: 'std', hs: 'std' },
     fxEvents: true, fxTraffic: true, fxAir: true, fxDetail: true, assist: 'auto', fps: false, invertY: false, swap: false, vibe: true, tc: null },
@@ -564,6 +567,10 @@ const SettingsManager = {
   TABS: [['gfx', 'Графіка'], ['snd', 'Звук'], ['play', 'Гра'], ['ctl', 'Керування'], ['lang', 'Мова'], ['priv', 'Конфіденційність']],
   tab: 'gfx',
   build(root, onChange, tabsEl) {
+    const same = this._bt === this.tab && this._br === root, back = same ? keepScroll(root) : null, tabsBack = tabsEl ? keepScroll(tabsEl) : null; this._bt = this.tab; this._br = root;
+    try { this.build2(root, onChange, tabsEl); } finally { if (tabsBack) tabsBack(); if (back) back(); }
+  },
+  build2(root, onChange, tabsEl) {
     if (tabsEl) { tabsEl.innerHTML = ''; for (const [id, n] of this.TABS) { const b = document.createElement('button'); b.textContent = _T(n); b.classList.toggle('on', this.tab === id); b.onclick = () => { this.tab = id; Sound.uiTone(0); this.build(root, onChange, tabsEl); }; tabsEl.appendChild(b); } }
     root.innerHTML = '';
     if (this.tab === 'lang') { root.appendChild(Menu.langGrid(() => this.build(root, onChange, tabsEl))); return; }
@@ -5538,16 +5545,22 @@ const Menu = {
   canContinue() { return (G.running && G.mode !== 'tutorial') || !!SaveSystem.read(); },
   show(scr) {
     this.open = true; document.body.classList.add('menuopen', 'inmenu'); $('start').classList.add('open'); $('more').classList.remove('open'); $('settings').classList.remove('open'); syncSheets();
-    if (scr) this.scr = scr; this.render();
+    if (scr) this.scr = scr; this._rs = null; this.render();   /* opening the menu starts at the top of the screen */
   },
   close() { this.open = false; document.body.classList.remove('menuopen', 'inmenu'); $('start').classList.remove('open'); },
   /* left column navigation; the extras entry sits low in the list, never in the centre of the screen */
   NAV: [['journey', '🚆', 'Нова подорож'], ['training', '🎓', 'Навчання машиніста'], ['settings', '⚙', 'Налаштування'], ['lang', '🌐', 'Мова'], ['ach', '🏆', 'Досягнення і статистика'], ['extras', '🎁', 'Додатково'], ['about', 'ℹ', 'Про гру та конфіденційність']],
   render() {
+    /* a re-render after a choice on the same screen keeps the scroll position; switching screens starts at the top.
+       The navigation strip (a horizontal scroller on phones) always keeps its position. */
+    const m0 = $('menubody'), same = this._rs === this.scr, back = same ? keepScroll(m0) : null, navBack = keepScroll($('menunav')); this._rs = this.scr;
+    try { this.render2(m0, same); } finally { navBack(); if (back) back(); }
+  },
+  render2(m0, same) {
     applyI18n(document); const nav = $('menunav'); nav.innerHTML = '';
     if (this.canContinue()) { const b = el('button', 'pri'); b.innerHTML = '<span class="ic">▶</span>'; b.appendChild(document.createTextNode(_T('Продовжити подорож'))); b.onclick = () => { Sound.uiTone(1); this.cont(); }; nav.appendChild(b); }
     for (const [id, ic, n] of this.NAV) { const b = el('button'); b.innerHTML = '<span class="ic"></span>'; b.firstChild.textContent = ic; b.appendChild(document.createTextNode(_T(n))); b.classList.toggle('on', this.scr === id); b.onclick = () => { Sound.uiTone(0); this.scr = id; this.render(); }; nav.appendChild(b); }
-    const m = $('menubody'); m.innerHTML = ''; m.scrollTop = 0; (this['s_' + this.scr] || this.s_journey).call(this, m);
+    const m = m0; m.innerHTML = ''; if (!same) m.scrollTop = 0; (this['s_' + this.scr] || this.s_journey).call(this, m);
   },
   cont() {
     if (G.running && G.mode !== 'tutorial') { this.close(); G.inMenu = false; G.paused = false; UI.mark('pause', false); Sound.init(); return; }
@@ -5647,7 +5660,7 @@ const Menu = {
   dialog(ic, title, msg, btns) {
     const d = $('dlg'); $('dlgic').textContent = ic || ''; $('dlgt').textContent = title || ''; $('dlgm').textContent = msg || ''; $('dlgm').style.whiteSpace = 'pre-line';
     const r = $('dlgb'); r.innerHTML = ''; for (const [t, fn, pri] of btns) { const b = el('button', pri ? 'pri' : null, t); b.onclick = () => { d.classList.remove('open'); Sound.uiTone(0); if (fn) fn(); }; r.appendChild(b); }
-    d.classList.add('open'); const f = r.querySelector('button'); if (f) f.focus();
+    d.classList.add('open'); const f = r.querySelector('button'); if (f) f.focus({ preventScroll: true });
   },
   /* ---------- settings ---------- */
   s_settings(m) {
