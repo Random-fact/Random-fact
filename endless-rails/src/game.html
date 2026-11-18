@@ -542,6 +542,8 @@ function vn2(x, y, s) {
   const a = H(xi, yi, s), b = H(xi + 1, yi, s), c = H(xi, yi + 1, s), d = H(xi + 1, yi + 1, s);
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
+/* ridged multifractal (0..1): sharp crests and branching valleys for mountain massifs */
+function ridgeN(x, y, s, o) { let a = 0, amp = .55, f = 1, w = 1; for (let i = 0; i < o; i++) { let n = 1 - Math.abs(2 * vn2(x * f, y * f, s + i * 13) - 1); n *= n * w; w = clamp(n * 1.6, 0, 1); a += n * amp; f *= 2.03; amp *= .5; } return a; }
 function fbm2(x, y, s, o) {
   let a = .5, f = 1, t = 0, n = 0;
   for (let i = 0; i < o; i++) { t += a * vn2(x * f, y * f, s + i * 17); n += a; a *= .5; f *= 2.03; }
@@ -862,6 +864,64 @@ function applyI18n(root) {
   document.documentElement.lang = LANG; document.documentElement.classList.toggle('cjk', CJK());
 }
 
+/* ===== Biome regions along the route =====
+   The line crosses a chain of natural regions, 7-20 km each, generated outward from the start in both directions from the
+   seed (the same route always has the same geography). Neighbours follow geography: high mountains are reached through
+   evergreen forest or alpine meadows, deserts through grasslands or dry alpine slopes, and so on. Between two regions there
+   is a transition zone of 2.4-4 km in which every property (vegetation, ground colour, relief, water, architecture) is a
+   weighted mix, so the change is gradual and has no visible border. Region variants (v1..v3) keep two regions of the same
+   kind from looking alike. */
+const BIOMES = ['temperate', 'sakura', 'mountains', 'evergreen', 'grassland', 'desert', 'alpine', 'wetland', 'autumn'];
+const BNEXT = {
+  temperate: ['grassland', 'evergreen', 'autumn', 'sakura', 'wetland', 'alpine'],
+  sakura: ['temperate', 'grassland', 'wetland', 'alpine'],
+  mountains: ['alpine', 'evergreen', 'desert'],
+  evergreen: ['temperate', 'mountains', 'alpine', 'autumn', 'wetland', 'grassland'],
+  grassland: ['temperate', 'desert', 'sakura', 'autumn', 'wetland', 'evergreen'],
+  desert: ['grassland', 'alpine', 'mountains'],
+  alpine: ['mountains', 'evergreen', 'sakura', 'desert', 'temperate'],
+  wetland: ['temperate', 'evergreen', 'grassland', 'autumn', 'sakura'],
+  autumn: ['temperate', 'evergreen', 'wetland', 'grassland']
+};
+const BPICK = { temperate: .8, sakura: 1, mountains: 1.4, evergreen: 1, grassland: 1, desert: .8, alpine: 1, wetland: .9, autumn: 1 };
+const BLEN = { temperate: [7, 12], sakura: [8, 13], mountains: [13, 20], evergreen: [8, 14], grassland: [8, 14], desert: [10, 16], alpine: [8, 13], wetland: [7, 12], autumn: [8, 13] };
+const Biome = {
+  seed: null, pos: [], neg: [], cache: new Map(),
+  reset() { this.seed = Rail.seed; this.pos = []; this.neg = []; this.cache.clear(); },
+  /* region 0 is a gentle region around the start; others are appended outward */
+  first() { const sd = this.seed, starts = ['temperate', 'grassland', 'evergreen', 'autumn', 'sakura', 'alpine', 'wetland'], t = starts[Math.floor(H(sd, 0, 700) * starts.length)];
+    const L = (BLEN[t][0] + H(sd, 0, 701) * (BLEN[t][1] - BLEN[t][0])) * 1000; return { t, s0: -L * .35, s1: L * .65, k: 0, v1: H(sd, 0, 702), v2: H(sd, 0, 703), v3: H(sd, 0, 704) }; },
+  next(list, sign) {
+    const sd = this.seed, n = list.length, k = sign * n, a = list[n - 1], b = list[n - 2], c = list[n - 3];
+    let opts = BNEXT[a.t].filter(t => (!b || t !== b.t) && (!c || t !== c.t)); if (!opts.length) opts = BNEXT[a.t];
+    /* a region that has not been seen for a long time gets more likely, so rare landscapes (desert, high mountains) keep coming back on a long trip */
+    const since = o => { for (let i = n - 1, d = 0; i >= 0 && d < 8; i--, d++) if (list[i].t === o) return d; return 8; }, wt = o => BPICK[o] * (1 + .3 * since(o));
+    let sum = 0; for (const t of opts) sum += wt(t); let r = H(sd, k, 710) * sum, t = opts[0]; for (const o of opts) { r -= wt(o); if (r <= 0) { t = o; break; } }
+    const L = (BLEN[t][0] + H(sd, k, 711) * (BLEN[t][1] - BLEN[t][0])) * 1000;
+    return sign > 0 ? { t, s0: a.s1, s1: a.s1 + L, k, v1: H(sd, k, 712), v2: H(sd, k, 713), v3: H(sd, k, 714) } : { t, s0: a.s0 - L, s1: a.s0, k, v1: H(sd, k, 712), v2: H(sd, k, 713), v3: H(sd, k, 714) };
+  },
+  region(s) {
+    if (this.seed !== Rail.seed) this.reset();
+    if (!this.pos.length) { const f = this.first(); this.pos.push(f); this.neg.push(f); }
+    if (s >= this.pos[0].s0) { const P = this.pos; while (P[P.length - 1].s1 <= s) P.push(this.next(P, 1)); let lo = 0, hi = P.length - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (P[m].s1 <= s) lo = m + 1; else hi = m; } return { R: P, i: lo }; }
+    const N = this.neg; while (N[N.length - 1].s0 > s) N.push(this.next(N, -1)); let lo = 0, hi = N.length - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (N[m].s0 > s) lo = m + 1; else hi = m; } return { R: N, i: lo };
+  },
+  /* transition half-width at the border between region a and b (wider into and out of high mountains) */
+  tw(a, b) { return (a.t === 'mountains' || b.t === 'mountains') ? 2000 : 1300; },
+  /* weights of every biome at s (sum 1) plus blended variants; cached per 16 m */
+  at(s) {
+    const key = Math.round(s / 16); let o = this.cache.get(key); if (o) return o;
+    const q = key * 16, { R, i } = this.region(q), cur = R[i], w = {}; for (const t of BIOMES) w[t] = 0;
+    let hi, lo;
+    if (R === this.pos) { while (R.length <= i + 1) R.push(this.next(R, 1)); hi = R[i + 1]; if (i > 0) lo = R[i - 1]; else { while (this.neg.length < 2) this.neg.push(this.next(this.neg, -1)); lo = this.neg[1]; } }
+    else { hi = R[i - 1]; while (R.length <= i + 1) R.push(this.next(R, -1)); lo = R[i + 1]; }
+    const fh = sm(cur.s1 - this.tw(cur, hi), cur.s1 + this.tw(cur, hi), q), fl = 1 - sm(cur.s0 - this.tw(lo, cur), cur.s0 + this.tw(lo, cur), q), wc = 1 - fh - fl;
+    w[cur.t] += wc; w[hi.t] += fh; w[lo.t] += fl;
+    o = { w, cur: cur.t, next: hi.t, prev: lo.t, toNext: cur.s1 - q, fromPrev: q - cur.s0, v1: cur.v1 * wc + hi.v1 * fh + lo.v1 * fl, v2: cur.v2 * wc + hi.v2 * fh + lo.v2 * fl, v3: cur.v3 * wc + hi.v3 * fh + lo.v3 * fl };
+    if (this.cache.size > 6000) this.cache.clear(); this.cache.set(key, o); return o;
+  }
+};
+
 const Rail = {
   seed: 1, zones: new Map(), px: [0], pz: [0], ph: [0], nx: [], nz: [], nh: [], route: {},
   /* station layout: 'dense' = a station every 6 km (free ride, scenic, cabin, photo); 'sparse' = intercity spacing of
@@ -899,12 +959,20 @@ const Rail = {
       z.platSide = H(sd, zi, 8) < .5 ? 1 : -1; z.platSide = 1;
     } else {
       z.c += (H(sd, zi, 2) - .5) * 300; z.xing = H(sd, zi, 91) < .62;
-      if (r < .22) { z.kind = 'bridge'; z.riverHalf = 40 + H(sd, zi, 3) * 30; z.half = z.riverHalf + 120; }
-      else if (r < .40) { z.kind = 'tunnel'; z.half = 300 + H(sd, zi, 3) * 400; z.c = Math.round(z.c / 8) * 8; z.Ht = Math.round((z.half - 150) / 8) * 8; }
-      else if (r < .58) { z.kind = 'village'; z.half = 380; }
-      else if (r < .72) { z.kind = 'industrial'; z.half = 420; }
-      else if (r < .84) { z.kind = 'city'; z.half = 700; z.dblHalf = 700; }
-      else if (r < .94) { z.kind = 'junction'; z.half = 900; z.xing = false; z.sj = Math.round((zi * Z + 560 + (H(sd, zi, 261) - .5) * 200) / 8) * 8; z.side = H(sd, zi, 262) < .5 ? -1 : 1; z.Th = .3 + H(sd, zi, 263) * .14; z.Lb = 480; z.sg = z.sj >= 0 ? 1 : -1; }
+      /* the region decides what the line meets: tunnels and gorge bridges in the mountains, bridges over water in the lake
+         land, settlements in the cherry valleys; elsewhere the original mix */
+      const W = Biome.at(z.c).w; let dom = 'temperate', dw = 0; for (const t of BIOMES) if (W[t] > dw) { dw = W[t]; dom = t; }
+      const TBL = { mountains: [['tunnel', .42], ['bridge', .26], ['village', .14], ['junction', .04]], desert: [['bridge', .2], ['tunnel', .08], ['village', .14], ['industrial', .12], ['junction', .06]],
+        wetland: [['bridge', .38], ['village', .24], ['industrial', .06], ['city', .06], ['junction', .06]], alpine: [['tunnel', .16], ['bridge', .16], ['village', .26], ['junction', .06]],
+        evergreen: [['tunnel', .14], ['bridge', .18], ['village', .2], ['industrial', .1], ['junction', .08]], sakura: [['bridge', .22], ['village', .3], ['city', .1], ['junction', .08]] }[dom];
+      let pick = null; if (TBL) { let acc = 0; for (const [k, pr] of TBL) { acc += pr; if (r < acc) { pick = k; break; } } if (!pick) pick = 'nature'; }
+      const is = (k, lo, hi) => pick ? pick === k : r >= lo && r < hi;
+      if (is('bridge', 0, .22)) { z.kind = 'bridge'; z.riverHalf = 40 + H(sd, zi, 3) * 30; z.half = z.riverHalf + 120; z.gorge = dom === 'mountains' || dom === 'desert' || dom === 'alpine'; }
+      else if (is('tunnel', .22, .40)) { z.kind = 'tunnel'; z.half = 300 + H(sd, zi, 3) * (dom === 'mountains' ? 650 : 400); z.c = Math.round(z.c / 8) * 8; z.Ht = Math.round((z.half - 150) / 8) * 8; }
+      else if (is('village', .40, .58)) { z.kind = 'village'; z.half = 380; }
+      else if (is('industrial', .58, .72)) { z.kind = 'industrial'; z.half = 420; }
+      else if (is('city', .72, .84)) { z.kind = 'city'; z.half = 700; z.dblHalf = 700; }
+      else if (is('junction', .84, .94)) { z.kind = 'junction'; z.half = 900; z.xing = false; z.sj = Math.round((zi * Z + 560 + (H(sd, zi, 261) - .5) * 200) / 8) * 8; z.side = H(sd, zi, 262) < .5 ? -1 : 1; z.Th = .3 + H(sd, zi, 263) * .14; z.Lb = 480; z.sg = z.sj >= 0 ? 1 : -1; }
     }
     this.zones.set(zi, z); return z;
   },
@@ -1019,18 +1087,27 @@ const Rail = {
     o.stn = z.kind === 'station' ? sm(0, 120, 320 - d) : 0;
     o.stf = 0; if (z.kind === 'station') { if (!z._cing) { this.cat(z); o.stf = sm(0, 150, z.pl + 150 - d); } else o.stf = o.stn; }
 
-    o.mount = Math.max(sm(.45, .8, r.n), o.tun * .7, o.tmt * .8);
-    o.forest = sm(.3, .62, vn1(s / 1800, sd + 22)) * (1 - .6 * o.mount);
-    const cold = vn1(s / 7000, sd + 23) * .75 + r.n * .5;
-    o.snow = sm(.82, 1.0, cold);
-    o.lw = 1 - sm(8, 22, o.ty);
-    o.coast = sm(.66, .82, vn1(s / 3500, sd + 24)) * o.lw;
+    /* biome mix: every property is a weighted sum of the regional profiles; 'temperate' keeps the original world */
+    const B = Biome.at(s), W = B.w, n = (f, k) => vn1(s / f, sd + k); o.bw = W; o.biome = B.cur; o.bv = B;
+    const tMount = Math.max(sm(.45, .8, r.n), 0), tForest = sm(.3, .62, n(1800, 22)) * (1 - .6 * tMount), cold = n(7000, 23) * .75 + r.n * .5, tSnow = sm(.82, 1.0, cold);
+    const lwLow = 1 - sm(8, 22, o.ty), tField = (1 - sm(.25, .5, n(1800, 22))) * (1 - tMount) * (1 - lwLow * .5);
+    const mix = P => { let v = 0; for (const t in P) v += W[t] * P[t]; return v; };
+    o.mount = Math.max(mix({ temperate: tMount, sakura: .1 + .15 * tMount, mountains: .7 + .3 * tMount, evergreen: Math.max(tMount, .3), grassland: .08, desert: .1, alpine: .4 + .2 * n(2600, 805), wetland: 0, autumn: Math.max(tMount * .8, .2) }), o.tun * .7, o.tmt * .8);
+    o.peak = mix({ mountains: .75 + .25 * B.v2, alpine: .5, evergreen: .18 });
+    o.forest = mix({ temperate: tForest, sakura: .42 + .35 * n(900, 801), mountains: .5, evergreen: .92 * (1 - .75 * sm(.62, .8, n(700, 802))), grassland: .05 + .12 * n(1500, 803), alpine: .12, wetland: .28 * n(1300, 804) + .08, autumn: .78 + .17 * n(1100, 806) }) * (1 - .6 * Math.max(0, o.mount - .5));
+    o.snow = mix({ temperate: tSnow, evergreen: tSnow * .7, grassland: tSnow * .3, wetland: tSnow * .5 });
+    o.lw = mix({ temperate: lwLow, sakura: .45, mountains: .22, evergreen: .3, grassland: .2 * lwLow, alpine: .38, wetland: .95, autumn: .15 + .35 * lwLow });
+    o.coast = sm(.66, .82, n(3500, 24)) * o.lw * (W.temperate + W.wetland * .6);
     o.side = vn1(s / 16000, sd + 25) > .5 ? 1 : -1;
-    o.field = (1 - sm(.25, .5, vn1(s / 1800, sd + 22))) * (1 - o.mount) * (1 - o.lw * .5);
+    o.field = mix({ temperate: tField, sakura: .3, grassland: .72 + .2 * n(1700, 807), autumn: .1, wetland: .15 }) * (1 - o.mount * (1 - W.alpine));
     o.urban = Math.max(o.city, o.vill * .6, o.ind);
-    o.arid = sm(.58, .78, vn1(s / 10000, sd + 51)) * (1 - o.mount) * (1 - o.lw) * (1 - o.snow) * (1 - o.urban);
-    o.swamp = sm(.6, .76, vn1(s / 2800, sd + 52)) * (1 - o.mount) * (1 - o.arid) * (1 - sm(14, 30, o.ty)) * (1 - o.urban) * (1 - o.coast);
-    o.forest *= 1 - o.arid * .92; o.field *= 1 - o.arid; o.meadow = o.field * sm(.35, .65, vn1(s / 2200, sd + 53)) * (1 - o.swamp);
+    o.arid = mix({ temperate: sm(.58, .78, n(10000, 51)) * (1 - tMount) * (1 - lwLow) * (1 - tSnow) * .5, desert: 1, grassland: .18, alpine: .05 }) * (1 - o.urban);
+    o.canyon = W.desert * (.25 + .75 * B.v1) * (1 - o.urban);
+    o.swamp = mix({ temperate: sm(.6, .76, n(2800, 52)) * (1 - sm(14, 30, o.ty)) * (1 - o.coast), wetland: .25 + .6 * sm(.35, .6, n(2800, 52)) }) * (1 - o.mount) * (1 - o.arid) * (1 - o.urban);
+    o.forest *= 1 - o.arid * .92; o.field *= 1 - o.arid;
+    o.meadow = mix({ temperate: o.field * sm(.35, .65, n(2200, 53)) * (1 - o.swamp), sakura: .4, alpine: .95, grassland: .2, mountains: .3, evergreen: .08 }) * (1 - o.arid);
+    o.gold = mix({ grassland: .9, desert: .35, autumn: .2, temperate: .12 * sm(.5, .8, n(5000, 808)) });
+    o.sak = W.sakura; o.aut = Math.max(W.autumn, W.temperate * (n(12000, 26) > .72 ? 1 : 0) * (1 - sm(.3, .6, o.snow)));
     return o;
   }
 };
@@ -1042,7 +1119,9 @@ const TSTYLES = [
   { n: 'північне дерев’яне', wall: [[.62, .2, .16], [.78, .62, .25], [.35, .42, .5], [.7, .66, .6]], roof: [[.22, .22, .25], [.3, .26, .24]], hm: .75, flat: 0, tall: 0 },
   { n: 'цегляне промислове', wall: [[.52, .26, .2], [.46, .22, .18], [.58, .32, .25], [.4, .36, .34]], roof: [[.28, .28, .3], [.35, .22, .18]], hm: 1.05, flat: .3, tall: .1 },
   { n: 'модерністське', wall: [[.72, .74, .76], [.55, .62, .72], [.84, .85, .86], [.45, .52, .58]], roof: [[.3, .32, .35]], hm: 1.5, flat: 1, tall: .35 },
-  { n: 'гірські шале', wall: [[.5, .36, .24], [.62, .5, .36], [.86, .84, .8], [.42, .3, .2]], roof: [[.34, .24, .18], [.9, .92, .95]], hm: .6, flat: 0, tall: 0 }
+  { n: 'гірські шале', wall: [[.5, .36, .24], [.62, .5, .36], [.86, .84, .8], [.42, .3, .2]], roof: [[.34, .24, .18], [.9, .92, .95]], hm: .6, flat: 0, tall: 0 },
+  { n: 'японське', wall: [[.93, .91, .87], [.82, .74, .62], [.4, .32, .26], [.9, .88, .84]], roof: [[.2, .22, .26], [.28, .29, .32]], hm: .7, flat: 0, tall: 0 },
+  { n: 'саманне', wall: [[.86, .72, .54], [.8, .64, .46], [.9, .8, .62], [.74, .58, .42]], roof: [[.7, .56, .4], [.62, .48, .34]], hm: .6, flat: .9, tall: 0 }
 ];
 const LANDMARKS = ['церква', 'годинникова вежа', 'стадіон', 'замок', 'телевежа', 'водонапірна вежа', 'млин', 'немає'];
 const CATS = { halt: 'сільська платформа', small: 'мала станція', regional: 'регіональна станція', big: 'міський вокзал', freight: 'вантажна станція', junction: 'промисловий вузол', mountain: 'гірська станція', river: 'річкова станція', hs: 'швидкісна станція' };
@@ -1051,10 +1130,12 @@ const STCFG = { halt: { n0: 1, n1: 1, lp: 0, p0: 50, p1: 70 }, small: { n0: 1, n
 Object.assign(Rail, {
   town(z) {
     if (z.tw) return z.tw; const sd = this.seed, r = k => H(sd, z.zi, 200 + k), b = this.bio(z.c);
-    let st = Math.floor(r(1) * TSTYLES.length); if (b.mount > .55 && r(2) < .7) st = 5; else if (b.snow > .6 && r(2) < .5) st = 2; if (z.kind === 'industrial' && r(3) < .6) st = 3;
+    let st = Math.floor(r(1) * 6); if (b.mount > .55 && r(2) < .7) st = 5; else if (b.snow > .6 && r(2) < .5) st = 2;
+    const W = b.bw; if (W.sakura > .5 && r(2) < .85) st = 6; else if (W.desert > .5 && r(2) < .8) st = 7; else if ((W.mountains + W.alpine) > .5 && r(2) < .75) st = 5; else if ((W.evergreen + W.wetland) > .5 && r(2) < .55) st = 2; else if (W.grassland > .5 && r(2) < .7) st = r(3) < .6 ? 0 : 1;
+    if (z.kind === 'industrial' && r(3) < .6) st = 3;
     const big = z.kind === 'city' || z.sk === 'city', tn = z.sk === 'town';
     const T = { style: st, S: TSTYLES[st], blk: [56, 64, 70, 78, 90][Math.floor(r(4) * 5)], step: 52 + Math.floor(r(5) * 5) * 8, density: .5 + r(6) * .5, hm: .8 + r(7) * .5, plan: ['сітка', 'лінійне', 'сітка', 'розріджене'][Math.floor(r(8) * 4)],
-      industry: r(9) < (z.kind === 'industrial' ? 1 : big ? .5 : .2), water: b.lw > .4 || b.coast > .2, landmark: LANDMARKS[Math.floor(r(10) * LANDMARKS.length)], hue: r(11) - .5, park: r(12) < .5, lamp: r(13) < .5 ? [1, .86, .55] : [.85, .92, 1], floors: 2 + Math.floor(r(14) * 4) };
+      industry: r(9) < (z.kind === 'industrial' ? 1 : big ? .5 : .2), water: b.lw > .4 || b.coast > .2, landmark: st === 6 && r(10) < .6 ? 'пагода' : LANDMARKS[Math.floor(r(10) * LANDMARKS.length)], hue: r(11) - .5, park: r(12) < .5, lamp: r(13) < .5 ? [1, .86, .55] : [.85, .92, 1], floors: 2 + Math.floor(r(14) * 4) };
     T.edges = [22]; for (let i = 1; i < 6; i++) T.edges.push(22 + i * T.step);
     T.pop = Math.round((big ? 40000 + r(15) * 400000 : tn ? 6000 + r(15) * 30000 : 300 + r(15) * 3500) / 100) * 100;
     T.kindName = big ? 'місто' : tn ? 'містечко' : z.kind === 'industrial' ? 'промзона' : 'село';
@@ -1176,6 +1257,22 @@ class Builder {
 
 /* ===== Materials & textures ===== */
 const MAT = {};
+/* height fog for every built-in material: the haze is dense near the valley floor and thins out upwards (exponential layer,
+   integrated along the line of sight), so the ground melts into the distance as before while mountain peaks, towers and
+   distant ranges stay visible above it. FOGHB = (base height, scale height, unused), shared by all materials. */
+const FOGHB = new THREE.Vector3(0, 200, 0); FOGHB.clone = function () { return this; };
+/* the edge of the generated world: objects of the newest chunks (and of the oldest, behind) appear / disappear with a dither
+   over ~400 m in front of these planes instead of popping in. FOGFP / FOGBP = (point x, z, unit direction away from the train) */
+const FOGFP = new THREE.Vector4(), FOGBP = new THREE.Vector4(); FOGFP.clone = function () { return this; }; FOGBP.clone = function () { return this; };
+(() => {
+  const C = THREE.ShaderChunk;
+  C.fog_pars_vertex = '#ifdef USE_FOG\n\tvarying float fogDepth;\n\tvarying float vFogWY;\n#endif';
+  C.fog_pars_vertex += '\n#ifdef OBJ_FADE\n\tvarying vec2 vFogWXZ;\n#endif';
+  C.fog_vertex = '#ifdef USE_FOG\n\tfogDepth = - mvPosition.z;\n\t#ifdef USE_INSTANCING\n\t\tvec4 fogWP = modelMatrix * instanceMatrix * vec4( position, 1.0 );\n\t#else\n\t\tvec4 fogWP = modelMatrix * vec4( position, 1.0 );\n\t#endif\n\tvFogWY = fogWP.y;\n\t#ifdef OBJ_FADE\n\t\tvFogWXZ = fogWP.xz;\n\t#endif\n#endif';
+  C.fog_pars_fragment = '#ifdef USE_FOG\n\tuniform vec3 fogColor;\n\tvarying float fogDepth;\n\tvarying float vFogWY;\n\tuniform vec3 fogHB;\n\t#ifdef FOG_EXP2\n\t\tuniform float fogDensity;\n\t#else\n\t\tuniform float fogNear;\n\t\tuniform float fogFar;\n\t#endif\n#endif\n#ifdef OBJ_FADE\n\tvarying vec2 vFogWXZ;\n\tuniform vec4 fogFP;\n\tuniform vec4 fogBP;\n\tfloat objFade( vec4 P ) {\n\t\tif ( P.z == 0.0 && P.w == 0.0 ) return 0.0;\n\t\tvec2 d = vFogWXZ - P.xy;\n\t\treturn dot( d, d ) < 640000.0 ? clamp( ( dot( d, P.zw ) + 420.0 ) / 400.0, 0.0, 1.0 ) : 0.0;\n\t}\n#endif';
+  C.fog_fragment = '#ifdef OBJ_FADE\n\t{ float fk = max( objFade( fogFP ), objFade( fogBP ) );\n\t\tif ( fk > 0.0 && fract( 52.9829189 * fract( dot( gl_FragCoord.xy, vec2( 0.06711056, 0.00583715 ) ) ) ) < fk ) discard; }\n#endif\n#ifdef USE_FOG\n\t#ifdef FOG_EXP2\n\t\tfloat fogFactor;\n\t\tif ( fogHB.y > 1.0 ) {\n\t\t\tfloat hq = ( vFogWY - cameraPosition.y ) / fogHB.y;\n\t\t\tfloat g = abs( hq ) < 0.02 ? 1.0 - 0.5 * hq : ( 1.0 - exp( - hq ) ) / hq;\n\t\t\tfloat tau = fogDensity * fogDepth * g * exp( - max( cameraPosition.y - fogHB.x, 0.0 ) / fogHB.y );\n\t\t\tfogFactor = 1.0 - exp( - tau * tau );\n\t\t} else fogFactor = 1.0 - exp( - fogDensity * fogDensity * fogDepth * fogDepth );\n\t#else\n\t\tfloat fogFactor = smoothstep( fogNear, fogFar, fogDepth );\n\t#endif\n\tgl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );\n#endif';
+  for (const k in THREE.ShaderLib) { const u = THREE.ShaderLib[k].uniforms; if (u && u.fogColor) { u.fogHB = { value: FOGHB }; u.fogFP = { value: FOGFP }; u.fogBP = { value: FOGBP }; } }
+})();
 /* building facades: window grid (diffuse) and lit windows at night (emissive); resolution follows the quality tier */
 function makeWindowTextures(S, aniso) {
   S = S || 128; const c1 = document.createElement('canvas'), c2 = document.createElement('canvas');
@@ -1208,6 +1305,7 @@ function initMaterials() {
   MAT.cabGlass = new THREE.MeshBasicMaterial({ color: 0xa9c6d8, transparent: true, opacity: .075, depthWrite: false, side: THREE.DoubleSide }); /* the single glass layer of each cab window */
   MAT.build = new THREE.MeshLambertMaterial({ vertexColors: true, map: wt, emissive: 0xffffff, emissiveMap: we, emissiveIntensity: 0 });
   MAT.emis = new THREE.MeshBasicMaterial({ vertexColors: true });
+  for (const m of [MAT.lit, MAT.build, MAT.emis]) m.defines = { OBJ_FADE: '' };
   MAT.lamp = new THREE.MeshBasicMaterial({ color: 0x554a30 });
   MAT.flash = new THREE.MeshBasicMaterial({ color: 0x660000 });
   MAT.tunnel = new THREE.MeshBasicMaterial({ color: 0x3a3c42, side: THREE.DoubleSide });
@@ -1376,7 +1474,7 @@ const Geo = {
 /* ===== WorldGenerator: terrain strips, track, trees (per 200 m chunk) ===== */
 const CS = 200, RSTEP = 8, NR = 25;
 /* terrain columns (lateral offsets): dense around the double-track formation so that ballast shoulders, slopes and retaining walls stay crisp */
-const UC = (() => { const R = [0, 1.8, 3.4, 4.6, 7, 10, 14, 20, 28, 38, 52, 70, 94, 125, 165, 225, 305, 400, 510, 640, 800, 1000, 1250, 1650, 2400, 3400];  /* mid-distance columns at most ~250 m apart (lakes keep their shape); the last three: far ground under volcanoes and the spaceport */ return [...R.slice().reverse().map(d => -U2 - d), BEDC, ...R]; })();
+const UC = (() => { const R = [0, 1.8, 3.4, 4.6, 7, 10, 14, 20, 28, 38, 52, 70, 94, 125, 165, 225, 305, 400, 510, 640, 800, 1000, 1250, 1650, 2000, 2400, 2900, 3400];  /* mid-distance columns at most ~250 m apart (lakes keep their shape); the last three: far ground under volcanoes and the spaceport */ return [...R.slice().reverse().map(d => -U2 - d), BEDC, ...R]; })();
 const NC = UC.length;
 const QL = { tree: 1, shadow: 0, ahead: 8, precip: 1, fx: 1, detail: 2, fog: 1, traffic: 1, ai: 4, beam: 1, pax: 1, clouds: .88 }; // live quality knobs (set by Quality)
 
@@ -1390,11 +1488,22 @@ function terrH(b, u, x, z) {
   const nf = lerp(fbm2(x / 1600, z / 1600, sd + 1, 2), fbm2(x / 420, z / 420, sd + 1, 4), fo);
   let h = b.ty + (nf - .5) * lerp(16, 70, b.mount) * (.4 + .6 * sm(10, 90, au));
   if (b.mount > .02) { const rg = fbm2(x / 900 + 5, z / 900, sd + 2, 3), rd = 1 - Math.abs(2 * rg - 1); h += b.mount * rd * rd * 190 * sm(70, 520, au); }
-  if (b.lw > .02) { const lk = sm(.64, .7, fbm2(x / 650, z / 650, sd + 3, 2)) * b.lw * sm(30, 70, au) * (1 - b.mount) * fo; if (lk > 0) h = lerp(h, -2.5, lk); }
+  if (b.lw > .02) { const th = .64 - .1 * (b.bw ? b.bw.wetland : 0), lk = sm(th, th + .06, fbm2(x / 650, z / 650, sd + 3, 2)) * b.lw * sm(30, 70, au) * (1 - b.mount) * fo; if (lk > 0) h = lerp(h, -2.5, lk); }
   if (b.lw > .02) { const isl = sm(.74, .78, fbm2(x / 170 + 9, z / 170, sd + 9, 2)) * sm(30, 70, au) * fo; if (isl > 0 && h < -1) h = lerp(h, 1.6 + 2 * fbm2(x / 40, z / 40, sd + 10, 2), isl * b.lw); }
   if (b.arid > .02) h += (b.arid * (vn2(x / 190, z / 190, sd + 7) - .5) * 15 * sm(10, 60, au) + b.arid * (vn2(x / 45, z / 45, sd + 11) - .5) * 2.2 * sm(10, 40, au)) * fo;
   if (b.swamp > .02) { const pd = sm(.6, .68, fbm2(x / 110 + 4, z / 110, sd + 8, 2)) * b.swamp * sm(24, 60, au) * fo; h = lerp(h, b.ty - .5 - 2.2 * pd, b.swamp * .7 * sm(10, 50, au)); if (pd > 0) h = lerp(h, -1.3, pd); }
   if (b.coast > 0) h = lerp(h, -14, sm(60, 300, u * b.side) * b.coast);
+  if (b.bw) {
+    const W = b.bw, V = b.bv;
+    /* big mountains: ridged massifs (peaks 0.9-1.6 km) rising from the valley of the line in the Grand Mountain Range;
+       alpine meadows and evergreen forest see such peaks only in the distance */
+    const pkN = W.mountains * (.75 + .25 * V.v2) * sm(140, 1300, au), pkF = (W.alpine * .55 + W.evergreen * .2) * sm(1300, 3200, au);
+    if (pkN + pkF > .01) { const rg = ridgeN(x / 2300, z / 2300, sd + 70, 4); h += (pkN + pkF) * (Math.pow(rg, 1.7) * (900 + 700 * V.v3) + fbm2(x / 650, z / 650, sd + 71, 3) * 140); }
+    /* canyon lands: flat-topped mesas in two tiers with steep walls; the line keeps to the canyon floor */
+    if (b.canyon > .01) { const cn = fbm2(x / 820 + 11, z / 820, sd + 75, 3), P = 55 + 75 * V.v2; h += b.canyon * sm(45, 170, au) * (sm(.47, .515, cn) * P + sm(.6, .63, cn) * P * .55); }
+    /* distant ranges standing on the horizon of many regions (far landscape only) */
+    if (au > 4000) { const mk = sm(.42, .66, vn1(b.s / 26000, sd + 91)) * (1 - W.wetland) * (1 - W.desert * .5); if (mk > .01) h += mk * sm(4200, 9000, au) * Math.pow(ridgeN(x / 4800, z / 4800, sd + 92, 3), 1.8) * 1100; }
+  }
   /* formation: ballast shoulder, then an engineered embankment (1:1.6) or cutting (1:1.2, rock cuts 1:0.6); some cuttings get a retaining wall */
   { const hn = h, bed = b.ty - .45, d0 = Math.max(0, bedD(u) - BEDW), d1 = b.jz ? Math.max(0, bedD(u - b.ju) - BEDW) : 1e9, ks = b.mount > .45 ? 1.65 : .85;
     if (hn <= bed) h = Math.max(hn, bed - Math.min(d0, d1) * .62);
@@ -1412,7 +1521,7 @@ function terrH(b, u, x, z) {
   if (b.ud) { const w = 1 - sm(10, 15, Math.abs(b.s - b.ud.s)); if (w > 0) { const prof = lerp(b.ud.rl, h, sm(14, 120, Math.abs(u - BEDC))); h = lerp(h, Math.min(h, prof), w); } }
   if (b.tin > -330) {
     /* mountain over the tunnel: ridge that grows towards the portals, with an open cut (trench) in front of each portal */
-    const tin = b.tin, ridge = 1 - sm(120, 420, au), Hm = 40 + 50 * Math.max(.4, b.mount), grow = Math.pow(sm(-300, 220, tin), 3.2);
+    const tin = b.tin, ridge = 1 - sm(120, 420, au), Hm = 40 + 50 * Math.max(.4, b.mount) + 280 * (b.bw ? b.bw.mountains : 0), grow = Math.pow(sm(-300, 220, tin), 3.2);
     const hill = b.ty + Hm * grow * ridge * (.8 + .4 * fbm2(x / 260 + 3, z / 260, sd + 15, 3));
     let ht = Math.max(h, hill);
     if (tin < 8) ht = Math.min(ht, Math.max(b.ty - .45, b.ty - .45 + Math.max(0, Math.abs(u - TUN.uc) - 8.8) * .62));
@@ -1455,18 +1564,29 @@ function terrColor(b, u, x, z, h) {
      stretch into long stripes there, so it fades to the local average with the distance from the track */
   const sd = Rail.seed, au = Math.abs(u), far = sm(250, 900, au), n1 = lerp(vn2(x / 37, z / 37, sd + 5), .5, far), dry = vn2(x / 300, z / 300, sd + 6);
   let r = .2 + .16 * dry + .05 * n1, g = .36 + .1 * (1 - dry) + .04 * n1, bl = .14 + .03 * dry;
+  if (b.gold > .01) { const k = b.gold * (1 - b.forest * .6) * .85, dn = vn2(x / 140, z / 140, sd + 17); r = lerp(r, .64 + .08 * dn + .04 * n1, k); g = lerp(g, .56 + .05 * dn + .03 * n1, k); bl = lerp(bl, .24 + .03 * dn, k); }
+  if (b.bw && b.bw.alpine > .01) { const k = b.bw.alpine * .5, dn = vn2(x / 160, z / 160, sd + 18); r = lerp(r, .27 + .05 * n1 + .05 * dn, k); g = lerp(g, .47 + .04 * n1, k); bl = lerp(bl, .18 + .02 * dn, k); }
   const f = b.forest * (1 - sm(.1, .4, b.urban)) * .7;
   r = lerp(r, .1, f); g = lerp(g, .25, f); bl = lerp(bl, .1, f * .8);
+  /* fallen cherry petals and autumn leaves on the ground of the groves */
+  if (b.sak > .01) { const k = b.sak * b.forest * .42 * (.7 + .6 * n1) * (1 - far * .5); r = lerp(r, .86, k); g = lerp(g, .62, k); bl = lerp(bl, .7, k); }
+  if (b.aut > .01) { const k = b.aut * b.forest * .5 * (.7 + .6 * n1) * (1 - far * .5); r = lerp(r, .56, k); g = lerp(g, .32, k); bl = lerp(bl, .12, k); }
   if (b.field > .35 && au > 14) {
     const cell = H(Math.floor(x / 90), Math.floor(z / 90), sd + 9), st = Math.sin((x * .8 + z * .6) / 7) * .03 * (1 - far), k = (b.field - .35) / .65 * (1 - sm(0, 6, -h));
     const fr = lerp(cell < .3 ? .62 : cell < .55 ? .3 : cell < .8 ? .5 : .24, .41, far), fg = lerp(cell < .3 ? .55 : cell < .55 ? .5 : cell < .8 ? .38 : .42, .46, far), fb = lerp(cell < .3 ? .2 : cell < .55 ? .17 : cell < .8 ? .2 : .13, .17, far);
     r = lerp(r, fr + st, k * .85); g = lerp(g, fg + st, k * .85); bl = lerp(bl, fb, k * .85);
   }
+  if (b.canyon > .01) { const st = .5 + .5 * Math.sin(h * .21 + vn2(x / 60, z / 60, sd + 16) * 2.2), k = b.canyon * sm(3, 12, h - b.ty);
+    r = lerp(r, .62 + .14 * st, k); g = lerp(g, .3 + .12 * st, k); bl = lerp(bl, .17 + .07 * st, k); }
   const rk = b.mount * sm(15, 90, h - b.ty + 20);
   r = lerp(r, .42 + .06 * n1, rk); g = lerp(g, .4 + .05 * n1, rk); bl = lerp(bl, .38 + .05 * n1, rk);
+  /* altitude zones of the big mountains: bare rock above the tree line, snow above the snow line (lower in cold regions) */
+  { const snowL = 430 + 220 * vn2(x / 1500, z / 1500, sd + 15) - 260 * b.snow, rockL = snowL - 230;
+    if (h > rockL - 60) { const kr = sm(rockL - 60, rockL + 40, h); r = lerp(r, .41 + .05 * n1, kr); g = lerp(g, .4 + .04 * n1, kr); bl = lerp(bl, .39 + .04 * n1, kr);
+      const ks = sm(snowL - 30, snowL + 50, h); r = lerp(r, .93, ks); g = lerp(g, .95, ks); bl = lerp(bl, .98, ks); } }
   /* flower patches only where the mesh is fine enough to show them as patches (near the line; 3D flowers stand there too) */
-  if (b.meadow > .2 && au > 12) { const m = b.meadow, fl = vn2(x / 7, z / 7, sd + 12), pick = vn2(x / 14, z / 14, sd + 13); r = lerp(r, .22, m * .6); g = lerp(g, .5, m * .6); bl = lerp(bl, .15, m * .6);
-    if (fl > .78 && au < 50) { const k = m * sm(.78, .86, fl) * (1 - sm(25, 50, au)); const c = pick < .33 ? [.95, .3, .3] : pick < .66 ? [.98, .88, .25] : [.96, .96, .98]; r = lerp(r, c[0], k); g = lerp(g, c[1], k); bl = lerp(bl, c[2], k); } }
+  if (b.meadow > .2 && au > 12) { const m = b.meadow, fl = vn2(x / 7, z / 7, sd + 12), pick = vn2(x / 14, z / 14, sd + 13); r = lerp(r, .24, m * .5); g = lerp(g, .45, m * .5); bl = lerp(bl, .15, m * .5);
+    if (fl > .8 && au < 45) { const k = m * sm(.8, .9, fl) * (1 - sm(22, 45, au)) * .5; const c = pick < .33 ? [.8, .36, .4] : pick < .66 ? [.86, .78, .32] : [.86, .86, .9]; r = lerp(r, c[0], k); g = lerp(g, c[1], k); bl = lerp(bl, c[2], k); } }
   if (b.arid > .02) { const dn = vn2(x / 190, z / 190, sd + 7), k = b.arid * (1 - sm(0, 8, 14 - au)) ; const c = [.78 - .08 * dn + .04 * n1, .66 - .09 * dn, .42 - .08 * dn]; r = lerp(r, c[0], k); g = lerp(g, c[1], k); bl = lerp(bl, c[2], k); }
   if (b.swamp > .02) { const k = b.swamp * (1 - sm(0, 10, 14 - au)) * .85, mud = vn2(x / 9, z / 9, sd + 14); r = lerp(r, .16 + .06 * mud, k); g = lerp(g, .2 + .05 * mud, k); bl = lerp(bl, .1, k); }
   const sand = (1 - sm(.3, 2.4, h)) * (1 - far * .75); r = lerp(r, .74, sand * .9); g = lerp(g, .68, sand * .9); bl = lerp(bl, .48, sand * .9);
@@ -1480,6 +1600,24 @@ function terrColor(b, u, x, z, h) {
   _col[0] = r; _col[1] = g; _col[2] = bl; return _col;
 }
 
+/* forest canopy seen beyond the belt of real trees (|u| > 250 m): share 0..1, colour and height above the ground.
+   Pink in the cherry regions, patches of yellow / orange / red in the autumn forest, dark green in the evergreen forest. */
+const _cn = [0, 0, 0, 0, 0, 0];
+function canopyAt(b, u, x, z, h) {
+  const au = Math.abs(u), W = b.bw; let f = b.forest * (1 - b.urban) * sm(.22, .45, b.forest) * sm(230, 520, au) * (1 - sm(380, 600, h - b.ty)) * (h > .6 ? 1 : 0) * (1 - b.stn) * (1 - b.arid);
+  if (b.ud || b.ob) f *= .3; _cn[0] = f; if (f <= .01) { _cn[5] = 0; return _cn; }
+  /* colour patches vary smoothly over ~600 m (coarse far columns would turn finer noise into stripes) */
+  const n = vn2(x / 620, z / 620, Rail.seed + 81), n2 = vn2(x / 240, z / 240, Rail.seed + 82), ev = Math.min(1, W.evergreen + W.mountains * .8 + W.alpine * .6);
+  let r = .1 + .03 * n2, g = .25 + .04 * n2, bl = .1;
+  r = lerp(r, .06, ev); g = lerp(g, .19 + .03 * n2, ev); bl = lerp(bl, .11, ev);
+  if (b.aut > .01) { const t = n * 3, i = Math.min(2, Math.floor(t)), f2 = t - i, P = [[.66, .52, .15], [.66, .36, .12], [.52, .22, .11], [.52, .22, .11]], pa = [lerp(P[i][0], P[i + 1][0], f2), lerp(P[i][1], P[i + 1][1], f2), lerp(P[i][2], P[i + 1][2], f2)], k = b.aut * (1 - ev * .6) * (.6 + .2 * n2);
+    r = lerp(r, pa[0], k); g = lerp(g, pa[1], k); bl = lerp(bl, pa[2], k); }
+  if (W.sakura > .01) { const k = W.sakura * (.72 + .2 * n), pc = [lerp(.86, .9, n2), lerp(.5, .62, n2), lerp(.62, .7, n2)]; r = lerp(r, pc[0], k); g = lerp(g, pc[1], k); bl = lerp(bl, pc[2], k); }
+  if (b.snow > .3) { const k = sm(.3, .9, b.snow) * .65; r = lerp(r, .86, k); g = lerp(g, .9, k); bl = lerp(bl, .92, k); }
+  _cn[1] = r; _cn[2] = g; _cn[3] = bl; _cn[4] = (ev > .5 ? 17 : W.sakura > .5 ? 8 : 13) * (.8 + .4 * n2);
+  /* how much of the ground the crowns hide: open orchards and groves show the grass between the trees */
+  _cn[5] = sm(0, .5, f) * (.5 + .5 * sm(.45, .85, b.forest)); return _cn;
+}
 class Chunk {
   /* built in stages so that WorldGen can spread the work over several frames (no hitches while the world is generated);
      lazy = false builds everything at once (start, teleport, switch flip next to the train) */
@@ -1532,6 +1670,13 @@ class Chunk {
     g.setIndex(full); g.computeVertexNormals(); g.setIndex(inner); g.computeBoundingSphere();
     const m = new THREE.Mesh(g, MAT.terrain); m.receiveShadow = QL.shadow > 0; m.frustumCulled = true; this.group.add(m);
     this.pos = pos;
+    /* forest canopy beyond the belt of real trees: the forests of the region are seen as masses kilometres away */
+    { const cp = new Float32Array(R * NC * 3), cc = new Float32Array(R * NC * 3), cf = new Float32Array(R * NC), ci = [];
+      for (let r = 0; r < R; r++) { const b = this.rows[r].b; for (let k = 0; k < NC; k++) { const i = r * NC + k, x = pos[i * 3], h = pos[i * 3 + 1], z = pos[i * 3 + 2], q = canopyAt(b, UC[k], x, z, h);
+        cf[i] = q[0]; cp[i * 3] = x; cp[i * 3 + 2] = z; cp[i * 3 + 1] = h + q[0] * q[4] - (1 - q[0]) * .3; const e = q[5]; cc[i * 3] = lerp(col[i * 3], q[1], e); cc[i * 3 + 1] = lerp(col[i * 3 + 1], q[2], e); cc[i * 3 + 2] = lerp(col[i * 3 + 2], q[3], e); } }
+      for (let r = 1; r <= NR; r++) for (let k = 0; k < NC - 1; k++) { const a = r * NC + k, b2 = a + 1, c2 = a + NC, d = c2 + 1; if (Math.max(cf[a], cf[b2], cf[c2], cf[d]) > .04) ci.push(a, b2, c2, b2, d, c2); }
+      if (ci.length) { const cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.BufferAttribute(cp, 3)); cg.setAttribute('color', new THREE.BufferAttribute(cc, 3)); cg.setIndex(ci); cg.computeVertexNormals(); cg.computeBoundingSphere();
+        const cm = new THREE.Mesh(cg, MAT.terrain); cm.receiveShadow = QL.shadow > 0; this.group.add(cm); } }
     /* water surface (level 0) wherever the terrain dips below it: lakes, rivers under bridges, coast */
     let wet = false; for (let i = 1; i < pos.length; i += 3) if (pos[i] < .2) { wet = true; break; }
     if (wet) {
@@ -1652,7 +1797,7 @@ class Chunk {
   }
   buildTrees() {
     const L = this.B.lit, p = {}, q = QL.tree; if (q <= 0) return;
-    const sd = Rail.seed, aut = vn1(this.s0 / 12000, sd + 26) > .72;
+    const sd = Rail.seed;
     for (let s = this.s0; s < this.s1; s += 11) {
       const b = Rail.bio(s); if (b.urban > .6 || b.dip > .5) continue;
       /* keep road corridors (level crossings, underpasses, overbridges, riverside roads) free of trees */
@@ -1666,6 +1811,10 @@ class Chunk {
         const ss = s + (H(s | 0, u | 0, sd + 41) - .5) * 10, uu = u + (H(s | 0, u | 0, sd + 42) - .5) * 10;
         const x = p.x - c * uu + sn * (ss - s) * 0, z = p.z + sn * uu + c * (ss - s) * 0;
         const bb = b, h = terrH(bb, uu, x, z); if (h < .6 || h > 95) continue;
+        if (b.canyon > .25 && au > 40 && H(s | 0, u | 0, sd + 63) < .06) { /* sandstone pillars and balanced rocks of the canyon lands */
+          const rk = H(s | 0, u | 0, sd + 67), rs = H(s | 0, u | 0, sd + 68), hc = meshH(s, uu) - .4, n = 2 + Math.floor(rk * 3), sc = 2.2 + rs * 3; let y = hc; const cl = [[.66, .34, .2], [.74, .46, .28], [.58, .3, .2]];
+          for (let t = 0; t < n; t++) { const hh = (4 + rk * 6) * (1 - t * .15), r0 = sc * (1 - t * .18); L.add(TPL.cyl, x + (t % 2) * .4, y, z, r0, hh, r0 * .9, rk * 6 + t, 0, cl[(t + (rk * 3 | 0)) % 3]); y += hh - .2; }
+          L.add(TPL.box, x, y, z, sc * 1.5, 1.2, sc * 1.2, rk * 6, 0, [.52, .28, .18]); continue; }
         if (b.arid > .35) { if (H(s | 0, u | 0, sd + 46) < .5 && au > 16) { const hc = meshH(s, uu) - .15; if (hc > .6) { if (H(s | 0, u | 0, sd + 47) < .5) { L.add(TPL.cyl, x, hc - .1, z, .55, 2.4 + H(s | 0, u | 0, 8) * 1.4, .55, 0, 0, [.2, .45, .22]); L.add(TPL.cyl, x + .5, hc + 1, z, .32, 1.2, .32, 0, 0, [.2, .45, .22]); } else L.add(TPL.ico, x, hc + .2, z, 1.6, .9, 1.6, k6(s, u), 0, [.5, .45, .26]); } } continue; }
         if (b.swamp > .4 && au > 14) { const hc = meshH(s, uu) - .25; if (hc > -.5) { if (H(s | 0, u | 0, sd + 48) < .12) {
             /* dead swamp tree: leaning grey trunk with a broken top and a few bare branches */
@@ -1677,37 +1826,78 @@ class Chunk {
         /* trees stand on the RENDERED terrain (the coarse mesh), not the analytic height, and every trunk is base-anchored
            and sunk 0.6 m so it never floats or disappears on slopes; species: spruce, pine, oak/maple, birch, poplar, bush */
         const g0 = meshH(s, uu), k = H(s | 0, u | 0, sd + 43), ht = 7 + H(s | 0, u | 0, sd + 44) * 9, j = H(s | 0, u | 0, sd + 45) * .08, sp = H(s | 0, u | 0, sd + 49);
-        const conif = b.snow > .4 || b.mount > .35 || k < .45, gy = Math.min(g0, h) - .6, tc = [.24 + j, .17 + j * .5, .11];
-        if (conif) {
-          const sw = b.snow * .55;
-          if (sp < .72 || b.snow > .4) { /* spruce / fir: 3 tiers on a short visible trunk */
-            const w = ht * .34, gc = [.06 + j + sw, .2 + j + sw, .11 + j + sw], y = gy + .6 + ht * .1;
-            L.add(TPL.boxB, x, gy, z, .34, ht * .18 + .9, .34, 0, 0, tc);
-            L.add(TPL.cone, x, y, z, w, ht * .5, w, 0, 0, gc); L.add(TPL.cone, x, y + ht * .3, z, w * .72, ht * .42, w * .72, 0, 0, gc);
-            if (QL.detail > 1) L.add(TPL.cone, x, y + ht * .56, z, w * .45, ht * .34, w * .45, 0, 0, gc);
-          } else { /* pine: tall bare reddish trunk, flat crown */
-            const w = ht * .42, gc = [.1 + j + sw, .26 + j + sw, .13 + j * .5 + sw];
-            L.add(TPL.boxB, x, gy, z, .38, ht * .72 + .6, .38, 0, 0, [.42, .25, .15]);
-            L.add(TPL.ico, x, gy + .6 + ht * .72, z, w, ht * .32, w, k * 6, 0, gc);
-            if (QL.detail > 1) L.add(TPL.ico, x + w * .2, gy + .6 + ht * .6, z - w * .15, w * .62, ht * .22, w * .62, k * 4, 0, gc);
-          }
-        } else if (sp < .22) { /* birch: white trunk, light airy crown */
-          const w = ht * .36, cc = aut ? [.86, .7 + j, .18] : [.36 + j, .56 + j, .2];
+        const gy = Math.min(g0, h) - .6, tc = [.24 + j, .17 + j * .5, .11], W = b.bw, alt = gy - b.ty, sw = b.snow * .55;
+        /* the flora of the region: in a transition zone each tree belongs to one of the two regions with their weights, so the
+           species mix changes gradually (first single cherry trees, then groves) */
+        let fl = 'temperate'; { let rr = H(s | 0, u | 0, sd + 60), acc = 0; for (const t of BIOMES) { acc += W[t]; if (rr <= acc) { fl = t; break; } } }
+        let kind;
+        if (fl === 'evergreen') kind = sp < .6 ? 'spruce' : sp < .84 ? 'pine' : 'fir';
+        else if (fl === 'mountains') kind = alt > 380 ? (sp < .25 ? 'pine' : null) : sp < .5 ? 'fir' : sp < .85 ? 'spruce' : 'birch';
+        else if (fl === 'alpine') kind = sp < .32 ? 'spruce' : sp < .45 ? 'pine' : sp < .6 ? 'bush' : null;
+        else if (fl === 'sakura') kind = sp < .8 ? 'cherry' : sp < .9 ? 'pine' : 'maple';
+        else if (fl === 'autumn') kind = sp < .12 ? 'spruce' : sp < .3 ? 'birch' : sp < .9 ? 'oak' : 'bush';
+        else if (fl === 'grassland') kind = sp < .65 ? 'oak' : sp < .9 ? 'poplar' : 'bush';
+        else if (fl === 'wetland') kind = sp < .45 ? 'willow' : sp < .7 ? 'birch' : 'oak';
+        else if (fl === 'desert') kind = null;
+        else { const conif = b.snow > .4 || b.mount > .35 || k < .45; kind = conif ? (sp < .72 || b.snow > .4 ? 'spruce' : 'pine') : sp < .22 ? 'birch' : (sp < .34 && b.field > .2) ? 'poplar' : (sp > .9 && au > 30) ? 'bush' : 'oak'; }
+        if (!kind) continue;
+        const tall = fl === 'evergreen' || fl === 'mountains' ? 1.35 : fl === 'alpine' ? .8 : 1, H2 = ht * tall;
+        const autumn = b.aut > H(s | 0, u | 0, sd + 61) && kind !== 'spruce' && kind !== 'pine' && kind !== 'fir' && kind !== 'cherry';
+        const ap = [[.86, .62, .12], [.9, .45, .1], [.76, .2, .1], [.56, .31, .12], [.72, .56, .16]][Math.floor(H(s | 0, u | 0, sd + 62) * 5)];
+        if (kind === 'spruce') { /* spruce: 3 tiers on a short visible trunk */
+          const w = H2 * .34, gc = [.06 + j + sw, .2 + j + sw, .11 + j + sw], y = gy + .6 + H2 * .1;
+          L.add(TPL.boxB, x, gy, z, .34, H2 * .18 + .9, .34, 0, 0, tc);
+          L.add(TPL.cone, x, y, z, w, H2 * .5, w, 0, 0, gc); L.add(TPL.cone, x, y + H2 * .3, z, w * .72, H2 * .42, w * .72, 0, 0, gc);
+          if (QL.detail > 1) L.add(TPL.cone, x, y + H2 * .56, z, w * .45, H2 * .34, w * .45, 0, 0, gc);
+        } else if (kind === 'fir') { /* fir: tall and narrow, four tiers */
+          const w = H2 * .24, gc = [.05 + j + sw, .17 + j + sw, .12 + j + sw], y = gy + .6 + H2 * .08;
+          L.add(TPL.boxB, x, gy, z, .3, H2 * .14 + .9, .3, 0, 0, tc);
+          for (let t = 0; t < (QL.detail > 1 ? 4 : 3); t++) L.add(TPL.cone, x, y + H2 * .22 * t, z, w * (1 - t * .2), H2 * .4, w * (1 - t * .2), 0, 0, gc);
+        } else if (kind === 'pine') { /* pine: tall bare reddish trunk, flat crown */
+          const w = H2 * .42, gc = [.1 + j + sw, .26 + j + sw, .13 + j * .5 + sw];
+          L.add(TPL.boxB, x, gy, z, .38, H2 * .72 + .6, .38, 0, 0, [.42, .25, .15]);
+          L.add(TPL.ico, x, gy + .6 + H2 * .72, z, w, H2 * .32, w, k * 6, 0, gc);
+          if (QL.detail > 1) L.add(TPL.ico, x + w * .2, gy + .6 + H2 * .6, z - w * .15, w * .62, H2 * .22, w * .62, k * 4, 0, gc);
+        } else if (kind === 'cherry') { /* cherry in bloom: dark trunk, wide crown of three pink / white lobes */
+          const hh = ht * .62, w = hh * .95, pal = [[1, .74, .84], [.99, .84, .9], [.97, .92, .95], [.95, .62, .76]], cc = pal[Math.floor(k * 4)], ty = gy + .6 + hh * .42;
+          L.add(TPL.boxB, x, gy, z, .34, hh * .5 + .6, .34, k * 6, .06, [.3, .2, .18]);
+          L.add(TPL.ico, x, ty + w * .28, z, w, w * .58, w, k * 6, 0, cc);
+          if (QL.detail > 0) L.add(TPL.ico, x + w * .36, ty + w * .14, z - w * .2, w * .64, w * .44, w * .64, k * 4, 0, [cc[0], cc[1] * .96, cc[2] * .98]);
+          if (QL.detail > 1) L.add(TPL.ico, x - w * .32, ty + w * .18, z + w * .26, w * .6, w * .42, w * .6, k * 5, 0, [cc[0] * .98, Math.min(1, cc[1] * 1.04), Math.min(1, cc[2] * 1.02)]);
+        } else if (kind === 'willow') { /* willow by the water: a wide hanging curtain under a dome */
+          const w = ht * .5, cc = [.42 + j, .56 + j, .22];
+          L.add(TPL.boxB, x, gy, z, .45, ht * .45 + .6, .45, 0, 0, [.33, .27, .2]);
+          L.add(TPL.cone, x, gy + 1.4, z, w * 1.15, ht * .8, w * 1.15, k * 6, 0, [cc[0] * .9, cc[1] * .93, cc[2]]);
+          L.add(TPL.ico, x, gy + ht * .72, z, w * .9, w * .5, w * .9, k * 6, 0, cc);
+        } else if (kind === 'birch') { /* birch: white trunk, light airy crown */
+          const w = ht * .36, cc = autumn ? [.88, .72 + j, .2] : [.36 + j, .56 + j, .2];
           L.add(TPL.boxB, x, gy, z, .26, ht * .78 + .6, .26, 0, 0, [.88, .87, .82]);
           L.add(TPL.ico, x, gy + .6 + ht * .72, z, w, ht * .46, w, k * 6, 0, cc);
-        } else if (sp < .34 && b.field > .2) { /* poplar: tall columnar crown */
-          const w = ht * .26, cc = aut ? [.8, .66, .16] : [.18 + j, .4 + j, .12];
+        } else if (kind === 'poplar') { /* poplar: tall columnar crown */
+          const w = ht * .26, cc = autumn ? [.82, .68, .16] : [.18 + j, .4 + j, .12];
           L.add(TPL.boxB, x, gy, z, .34, ht * .3 + .6, .34, 0, 0, tc);
           L.add(TPL.ico, x, gy + .6 + ht * .78, z, w, ht * 1.05, w, k * 6, 0, cc);
-        } else if (sp > .9 && au > 30) { /* undergrowth bush, no trunk */
+        } else if (kind === 'bush') { /* undergrowth bush, no trunk */
           const w = 1.6 + k * 2.2;
-          L.add(TPL.ico, x, gy + .6 + w * .25, z, w, w * .7, w, k * 6, 0, aut ? [.6, .32, .1] : [.15 + j, .33 + j, .11]);
-        } else { /* oak / maple / lime: broad crown of two lobes on a stout trunk */
-          const w = ht * .6, cc = aut ? (k < .7 ? [.72 + j, .42 + j, .08] : [.6, .22 + j, .1]) : [.17 + j, .38 + j, .1], ty = gy + .6 + ht * .4;
+          L.add(TPL.ico, x, gy + .6 + w * .25, z, w, w * .7, w, k * 6, 0, autumn ? [ap[0] * .85, ap[1] * .85, ap[2]] : [.15 + j, .33 + j, .11]);
+        } else { /* oak / maple / lime: broad crown of two lobes on a stout trunk (red Japanese maple in the cherry regions) */
+          const w = ht * .6, cc = kind === 'maple' ? [.78, .18 + j, .12] : autumn ? [ap[0] + j * .5, ap[1] + j * .5, ap[2]] : [.17 + j, .38 + j, .1], ty = gy + .6 + ht * .4;
           L.add(TPL.boxB, x, gy, z, .5, ht * .5 + .6, .5, 0, 0, [.29 + j, .21, .14]);
           L.add(TPL.ico, x, ty + w * .36, z, w, w * .82, w, k * 6, 0, cc);
-          if (QL.detail > 1) L.add(TPL.ico, x + w * .28, ty + w * .62, z + w * .1, w * .62, w * .55, w * .62, k * 3, 0, [cc[0] * 1.08, cc[1] * 1.08, cc[2]]);
+          if (QL.detail > 1) L.add(TPL.ico, x + w * .28, ty + w * .62, z + w * .1, w * .62, w * .55, w * .62, k * 3, 0, [Math.min(1, cc[0] * 1.08), Math.min(1, cc[1] * 1.08), cc[2]]);
         }
+      }
+      /* blossom alleys: in stretches of the cherry regions the line runs between two rows of cherry trees */
+      if (b.sak > .5 && !road && b.stf < .05 && b.tun < .05 && b.tin < -90 && !b.deck && !b.jz && b.dip < .1 && vn1(s / 900, sd + 64) > .5) for (const ua of [17.5, -U2 - 17.5]) {
+        const ss = s + 4, hc = meshH(ss, ua) - .5, a2 = {}; ptAt(ss, ua, a2); const kk = H(s | 0, ua | 0, sd + 65), hh = 5.5 + kk * 2, w = hh * .9, pal = [[1, .74, .84], [.99, .84, .9], [.97, .92, .95]], cc = pal[Math.floor(kk * 3)];
+        L.add(TPL.boxB, a2.x, hc, a2.z, .3, hh * .5 + .5, .3, kk * 6, .05, [.3, .2, .18]); L.add(TPL.ico, a2.x, hc + hh * .62, a2.z, w, w * .58, w, kk * 6, 0, cc);
+        if (QL.detail > 0) L.add(TPL.ico, a2.x + w * .3, hc + hh * .52, a2.z - w * .25, w * .6, w * .42, w * .6, kk * 4, 0, cc);
+      }
+      /* torii gates near the line now and then in the cherry regions */
+      if (b.sak > .6 && !road && b.stf < .05 && b.tin < -90 && !b.deck && Math.floor(s / 640) !== Math.floor((s - 11) / 640) && H(Math.floor(s / 640), 0, sd + 66) < .55) {
+        const side = H(Math.floor(s / 640), 1, sd + 66) < .5 ? 1 : -1, ua = side > 0 ? 26 : -U2 - 26, gp = meshH(s, ua) - .3, a3 = {}, R = [.78, .16, .1], K = [.12, .1, .1]; ptAt(s, ua, a3);
+        for (const d of [-2.6, 2.6]) L.add(TPL.cyl, a3.x + Math.sin(a3.hd) * d, gp, a3.z + Math.cos(a3.hd) * d, .55, 7.2, .55, 0, 0, R);
+        L.add(TPL.box, a3.x, gp + 5.6, a3.z, .5, .45, 6.6, a3.hd, 0, R); L.add(TPL.box, a3.x, gp + 7.35, a3.z, .7, .55, 8.4, a3.hd, 0, K);
       }
       if (q > .5 && b.urban < .3 && b.arid < .3) for (let n = 0; n < 5; n++) {
         const u = (H(s | 0, n, sd + 55) - .5) * 160, au = Math.abs(u); if (bedD(u) < 10 || road || (b.stn > .1 && au < 70)) continue; const x = p.x - c * u, z = p.z + sn * u, h = meshH(s, u); if (h < .7 || h > 80) continue;
@@ -1715,6 +1905,7 @@ class Chunk {
         if (b.meadow > .3 && kk < .6) { const cc = [[.95, .3, .3], [.98, .88, .25], [.96, .96, .98], [.7, .4, .9]][Math.floor(H(s | 0, n, 57) * 4)]; for (let f = 0; f < 3; f++) L.add(TPL.ico, x + f * .5, h + .25, z + (f % 2) * .4, .3, .22, .3, 0, 0, cc); }
         else if (b.forest > .35 && kk < .5) L.add(TPL.ico, x, h + .5, z, 1.5 + kk * 2, 1.1 + kk, 1.5 + kk * 2, kk * 6, 0, [.1 + kk * .08, .27 + kk * .1, .09]);
         else if (b.forest > .35 && kk < .6) { L.add(TPL.cyl, x, h, z, .6, .5, .6, 0, 0, [.38, .28, .2]); }
+        else if (b.gold > .4 && b.field > .4 && kk < .3 && au > 25) { for (let f = 0; f < 3; f++) L.add(TPL.cyl, x + f * 2.2, h + .75, z + (f % 2) * 1.6, 1.5, 1.3, 1.5, kk * 6, Math.PI / 2, [.86, .72, .36]); }
       }
       if (b.mount > .25) for (let n = 0; n < 2; n++) {
         const u = (H(s | 0, n, sd + 50) - .5) * 400; if (Math.abs(u) < 14 || H(s | 0, n, sd + 51) > b.mount * .5) continue;
@@ -1768,13 +1959,15 @@ const ZoneDecor = {
   landmark(ch, B, z) {
     const T = Rail.town(z), kind = T.landmark, s = z.c + 40, side = H(Rail.seed, z.zi, 240) < .5 ? -1 : 1, u = side * (z.kind === 'city' || z.sk === 'city' ? 110 : 62);
     if (kind === 'немає' || s < ch.s0 || s >= ch.s1) return;
-    const L = this.loc(s, u), y = groundMin(s, u, { 'церква': 10, 'годинникова вежа': 6, 'стадіон': 42, 'замок': 24, 'телевежа': 7, 'водонапірна вежа': 6, 'млин': 6 }[kind] || 8), W = [.86, .84, .78];
+    const L = this.loc(s, u), y = groundMin(s, u, { 'церква': 10, 'годинникова вежа': 6, 'стадіон': 42, 'замок': 24, 'телевежа': 7, 'водонапірна вежа': 6, 'млин': 6, 'пагода': 7 }[kind] || 8), W = [.86, .84, .78];
     if (kind === 'церква') { B.build.add(TPL.boxB, L.x, y - .2, L.z, 10, 9, 18, L.hd, 0, [.88, .86, .8], 1, 1); B.lit.add(TPL.boxB, L.x, y + 8.8, L.z, 5, 22, 5, L.hd, 0, W); B.lit.add(TPL.pyr, L.x, y + 30.8, L.z, 6, 10, 6, 0, 0, [.25, .3, .32]); B.lit.add(TPL.pyr, L.x, y + 8.8, L.z, 11, 4, 19, L.hd, 0, [.4, .3, .25]); }
     else if (kind === 'годинникова вежа') { B.build.add(TPL.boxB, L.x, y - .2, L.z, 8, 32, 8, L.hd, 0, [.8, .74, .62], 1, 2); B.lit.add(TPL.pyr, L.x, y + 31.8, L.z, 9, 10, 9, 0, 0, [.3, .34, .36]); for (const a of [0, 1, 2, 3]) B.emis.add(TPL.box, L.x + Math.sin(a * 1.5708) * 4.1, y + 26, L.z + Math.cos(a * 1.5708) * 4.1, a % 2 ? .2 : 3, 3, a % 2 ? 3 : .2, 0, 0, [1, .95, .7]); }
     else if (kind === 'стадіон') { for (const k of [-1, 1]) { B.lit.add(TPL.boxB, L.x + Math.cos(L.hd) * k * 30, y - .2, L.z - Math.sin(L.hd) * k * 30, 6, 11, 70, L.hd, 0, [.62, .62, .66]); B.lit.add(TPL.boxB, L.x + Math.sin(L.hd) * k * 38, y - .2, L.z + Math.cos(L.hd) * k * 38, 60, 11, 6, L.hd, 0, [.62, .62, .66]); B.lit.add(TPL.cyl, L.x + Math.cos(L.hd) * k * 34 + Math.sin(L.hd) * 40, y, L.z - Math.sin(L.hd) * k * 34 + Math.cos(L.hd) * 40, 1, 36, 1, 0, 0, [.5, .5, .52]); B.emis.add(TPL.box, L.x + Math.cos(L.hd) * k * 34 + Math.sin(L.hd) * 40, y + 36, L.z - Math.sin(L.hd) * k * 34 + Math.cos(L.hd) * 40, 4, 1.2, 4, 0, 0, [1, 1, .9]); } B.lit.add(TPL.boxB, L.x, y - .1, L.z, 56, .2, 66, L.hd, 0, [.2, .48, .2]); }
     else if (kind === 'замок') { B.lit.add(TPL.boxB, L.x, y - .5, L.z, 30, 24, 30, L.hd, 0, [.62, .6, .56]); for (const a of [-1, 1]) for (const b of [-1, 1]) { B.lit.add(TPL.cyl, L.x + a * 17, y - .5, L.z + b * 17, 9, 32, 9, 0, 0, [.58, .56, .52]); B.lit.add(TPL.cone, L.x + a * 17, y + 31.5, L.z + b * 17, 11, 9, 11, 0, 0, [.3, .22, .2]); } B.lit.add(TPL.boxB, L.x, y + 23.5, L.z, 12, 12, 12, L.hd, 0, [.66, .64, .6]); }
     else if (kind === 'телевежа') { B.lit.add(TPL.cyl, L.x, y - .5, L.z, 5, 150, 5, 0, 0, [.7, .7, .72]); B.lit.add(TPL.cyl, L.x, y + 105, L.z, 14, 8, 14, 0, 0, [.62, .62, .66]); B.emis.add(TPL.box, L.x, y + 152, L.z, 1.2, 1.2, 1.2, 0, 0, [1, .1, .1]); }
     else if (kind === 'водонапірна вежа') { B.lit.add(TPL.cyl, L.x, y - .3, L.z, 4, 24, 4, 0, 0, [.58, .58, .6]); B.lit.add(TPL.cyl, L.x, y + 24, L.z, 12, 9, 12, 0, 0, [.7, .72, .76]); B.lit.add(TPL.cone, L.x, y + 33, L.z, 12.5, 4, 12.5, 0, 0, [.4, .3, .28]); }
+    else if (kind === 'пагода') { for (let t = 0; t < 5; t++) { const w = 11 - t * 1.6, yb = y - .3 + t * 4.4; B.lit.add(TPL.boxB, L.x, yb, L.z, w * .62, 3.6, w * .62, L.hd, 0, [.92, .9, .85]); B.lit.add(TPL.pyr, L.x, yb + 3.4, L.z, w * 1.05, 1.4, w * 1.05, L.hd, 0, [.2, .22, .26]); }
+      B.lit.add(TPL.cyl, L.x, y + 23.3, L.z, .35, 5, .35, 0, 0, [.75, .6, .2]); }
     else if (kind === 'млин') { B.lit.add(TPL.cyl, L.x, y - .3, L.z, 9, 16, 9, 0, 0, [.84, .8, .72]); B.lit.add(TPL.cone, L.x, y + 15.7, L.z, 10.5, 5, 10.5, 0, 0, [.35, .24, .2]); for (let k = 0; k < 4; k++) B.lit.add(TPL.box, L.x + Math.cos(L.hd) * 0 + Math.sin(L.hd) * 5, y + 13 + Math.cos(k * 1.5708 + .4) * 6, L.z + Math.cos(L.hd) * 5, .4, 12, 2.2, L.hd, 0, [.8, .76, .7]); }
   },
   industrial(ch, B, z) {
@@ -2494,6 +2687,8 @@ function initTrainMats() {
   MH = { head: new THREE.MeshBasicMaterial({ color: 0x222222 }), tail: new THREE.MeshBasicMaterial({ color: 0x330000 }), cabin: new THREE.MeshBasicMaterial({ color: 0x777060 }), door: new THREE.MeshPhongMaterial({ color: 0x2b3f66, specular: 0x222222, shininess: 30 }),
     aiHead: new THREE.MeshBasicMaterial({ color: 0xfff6e0 }), aiTail: new THREE.MeshBasicMaterial({ color: 0xff2010 }) };
   MAT.glass.opacity = .2;
+  /* lakes and rivers mirror the sky (horizon colour at grazing angles, blue sky when seen from above) */
+  if (MAT.water) { MAT.water.envMap = EnvMap.tex; MAT.water.combine = THREE.MixOperation; MAT.water.reflectivity = .5; MAT.water.needsUpdate = true; }
   MAT.trainBody = new THREE.MeshPhongMaterial({ vertexColors: true, specular: 0x2a2a2a, shininess: 38, envMap: EnvMap.tex, combine: THREE.AddOperation, reflectivity: .1 });
   MAT.trainGlass = new THREE.MeshPhongMaterial({ color: 0x0b131c, specular: 0x777777, shininess: 90, envMap: EnvMap.tex, combine: THREE.AddOperation, reflectivity: .45, transparent: true, opacity: .42, depthWrite: false });
   MAT.metal = new THREE.MeshPhongMaterial({ vertexColors: true, specular: 0x444444, shininess: 50 });
@@ -3188,7 +3383,7 @@ class Sky {
     this.mat.uniforms.sunDir.value.copy(Env.sunDir); this.mat.uniforms.moonDir.value.copy(Env.sunDir).negate();
     this.mat.uniforms.night.value = nt; this.mat.uniforms.over.value = over; this.mat.uniforms.flash.value = Env.flash; this.mat.uniforms.ecl.value = Env.ecl || 0;
     this.mesh.position.copy(cam);
-    const dens = (QL.fog || 1) * .001 + .0042 * Env.fogK + .0011 * Env.rain + .0016 * Env.snow + .0002 * Env.cloud + (Env.mist || 0) * .0014 + Env.dust * .0032;
+    const dens = (QL.fog || 1) * .00056 + .0042 * Env.fogK + .0011 * Env.rain + .0016 * Env.snow + .0002 * Env.cloud + (Env.mist || 0) * .0014 + Env.dust * .0032;
     this.scene.fog.color.copy(fogc); this.scene.fog.density = dens * (Env.mapMode ? .15 : 1);
     this.scene.background = fogc;
     /* light */
@@ -4858,6 +5053,126 @@ const Aviation = {
   }
 };
 
+/* ===== far landscape: the world beyond the detailed chunks, out to ~38 km =====
+   A polar grid around the camera, drawn in its own pass before the detailed scene (own camera with a far plane of 60 km;
+   the detailed scene is drawn over it with a cleared depth buffer). Heights and colours come from the same terrain
+   functions, so the far land continues the near one; forests are shown as a canopy (pink in cherry regions, autumn colours),
+   water as lakes, mountains with their snow. Where the detailed chunks exist the far land is cut away in the shader.
+   The grid is rebuilt in small steps over several frames whenever the camera has moved ~1 km. */
+const FarLand = {
+  scene: null, cam: null, mesh: null, mat: null, sun: null, hemi: null, job: null, C: null, S0: { value: 0 }, S1: { value: 0 }, UW: { value: 0 },
+  PL: { value: Array.from({ length: 9 }, () => new THREE.Vector2()) }, _pl: {},
+  RINGS: [300, 600, 900, 1200, 1550, 1950, 2400, 2950, 3600, 4400, 5400, 6600, 8100, 10000, 12400, 15400, 19200, 24000, 30000, 38000],
+  init(main, sky) {
+    this.scene = new THREE.Scene(); this.scene.fog = main.fog; this.cam = new THREE.PerspectiveCamera(70, 1, 40, 60000);
+    this.sun = new THREE.DirectionalLight(0xffffff, 1); this.scene.add(this.sun); this.scene.add(this.sun.target); this.hemi = new THREE.HemisphereLight(0xaaccff, 0x445533, .6); this.scene.add(this.hemi);
+    if (sky && sky.mesh) { main.remove(sky.mesh); this.scene.add(sky.mesh); }
+    /* the part under the detailed chunks is cut out exactly, per pixel in world space: the strip of the chunks along the line
+       (polyline of 8 segments) widened by uUW; interpolating line coordinates over the big far triangles would cut wrong holes */
+    const UW = this.UW, PL = this.PL;
+    this.mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    this.mat.onBeforeCompile = sh => { Object.assign(sh.uniforms, { uUW: UW, uPL: PL });
+      sh.vertexShader = sh.vertexShader.replace('void main() {', 'varying vec2 vWXZ;\nvoid main() {\n\tvWXZ = ( modelMatrix * vec4( position, 1.0 ) ).xz;');
+      sh.fragmentShader = sh.fragmentShader.replace('void main() {', `uniform float uUW;
+uniform vec2 uPL[9];
+varying vec2 vWXZ;
+bool inNear( vec2 p ) {
+\tfloat tp = 0.0;
+\tfor ( int i = 0; i < 8; i ++ ) {
+\t\tvec2 a = uPL[ i ], ab = uPL[ i + 1 ] - a; float t = dot( p - a, ab ) / max( dot( ab, ab ), 1.0 );
+\t\tif ( t >= 0.0 && t <= 1.0 && length( p - a - ab * t ) < uUW ) return true;
+\t\tif ( i > 0 && t < 0.0 && tp > 1.0 && length( p - a ) < uUW ) return true;
+\t\ttp = t;
+\t}
+\treturn false;
+}
+void main() {
+\tif ( uUW > 0.0 && inNear( vWXZ ) ) discard;`); };
+    this.job = null; this.C = null;
+  },
+  reset() { this.C = null; this.job = null; if (this.mesh) { this.scene.remove(this.mesh); this.mesh.geometry.dispose(); this.mesh = null; } },
+  /* nearest point of the line to (x, z): coarse search over samples every 250 m, then refined */
+  locate(x, z, smp) {
+    let bi = 0, bd = 1e18; for (let i = 0; i < smp.length; i++) { const q = smp[i], d = (q.x - x) * (q.x - x) + (q.z - z) * (q.z - z); if (d < bd) { bd = d; bi = i; } }
+    let s = smp[bi].s, best = 1e18, bs = s; const o = this._p || (this._p = {});
+    for (let ds = -300; ds <= 300; ds += 25) { Rail.pose(s + ds, o); const d = (o.x - x) * (o.x - x) + (o.z - z) * (o.z - z); if (d < best) { best = d; bs = s + ds; } }
+    Rail.pose(bs, o); return { s: bs, u: (x - o.x) * -Math.cos(o.hd) + (z - o.z) * Math.sin(o.hd) };
+  },
+  start(cx, cz, sc) {
+    const NA = QL.detail > 0 ? 96 : 64, R = this.RINGS, smp = [];
+    for (let s = sc - 48000; s <= sc + 48000; s += 250) { const o = Rail.pose(s, {}); smp.push({ s, x: o.x, z: o.z }); }
+    const nv = 1 + R.length * NA; this.job = { cx, cz, sc, NA, smp, i: 0, nv, pos: new Float32Array(nv * 3), col: new Float32Array(nv * 3) };
+  },
+  vertex(J, k) {
+    let x = J.cx, z = J.cz; if (k > 0) { const ri = Math.floor((k - 1) / J.NA), ai = (k - 1) % J.NA, a = ai / J.NA * Math.PI * 2, r = this.RINGS[ri]; x += Math.cos(a) * r; z += Math.sin(a) * r; }
+    const L = this.locate(x, z, J.smp), b = Rail.bio(L.s); let h = terrH(b, L.u, x, z); const c = terrColor(b, L.u, x, z, h); let cr = c[0], cg = c[1], cb = c[2];
+    if (h < .2) { h = 0; cr = .2; cg = .36; cb = .45; }
+    else { const q = canopyAt(b, L.u, x, z, h); if (q[0] > .01) { const e = q[5]; h += q[0] * q[4]; cr = lerp(cr, q[1], e); cg = lerp(cg, q[2], e); cb = lerp(cb, q[3], e); } }
+    J.pos[k * 3] = x; J.pos[k * 3 + 1] = h; J.pos[k * 3 + 2] = z; J.col[k * 3] = cr; J.col[k * 3 + 1] = cg; J.col[k * 3 + 2] = cb;
+  },
+  finish(J) {
+    const g = new THREE.BufferGeometry(), NA = J.NA, NR = this.RINGS.length, idx = [];
+    /* counter-clockwise seen from above (the angle grows from +x towards +z, i.e. clockwise on the map): normals point up */
+    for (let a = 0; a < NA; a++) idx.push(0, 1 + (a + 1) % NA, 1 + a);
+    for (let r = 0; r < NR - 1; r++) for (let a = 0; a < NA; a++) { const i0 = 1 + r * NA + a, i1 = 1 + r * NA + (a + 1) % NA, j0 = i0 + NA, j1 = i1 + NA; idx.push(i0, i1, j0, i1, j1, j0); }
+    g.setAttribute('position', new THREE.BufferAttribute(J.pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(J.col, 3)); g.setIndex(idx); g.computeVertexNormals(); g.computeBoundingSphere();
+    if (this.mesh) { this.scene.remove(this.mesh); this.mesh.geometry.dispose(); }
+    this.mesh = new THREE.Mesh(g, this.mat); this.mesh.frustumCulled = false; this.scene.add(this.mesh); this.C = { x: J.cx, z: J.cz }; this.job = null;
+  },
+  update(cam, sc, sky, budgetMs) {
+    if (!this.scene) return; const P = cam.position;
+    if (!this.job && (!this.C || Math.hypot(P.x - this.C.x, P.z - this.C.z) > 900)) this.start(P.x, P.z, sc);
+    if (this.job) { const J = this.job, t0 = performance.now(), full = !this.mesh || (this.C && Math.hypot(P.x - this.C.x, P.z - this.C.z) > 6000);
+      while (J.i < J.nv && (full || performance.now() - t0 < budgetMs)) this.vertex(J, J.i++); if (J.i >= J.nv) this.finish(J); }
+    /* cut-out of the detailed chunks */
+    let lo = Infinity, hi = -Infinity; for (const k of WorldGen.chunks.keys()) { lo = Math.min(lo, k); hi = Math.max(hi, k); }
+    if (lo <= hi) { const a = this.S0.value = lo * CS + 120, b = this.S1.value = (hi + 1) * CS - 120, o = this._pl; for (let i = 0; i < 9; i++) { Rail.pose(a + (b - a) * i / 8, o); this.PL.value[i].set(o.x, o.z); } this.UW.value = 3200; }
+    else { this.S0.value = 1; this.S1.value = 0; this.UW.value = 0; }
+    /* same camera and light as the detailed scene */
+    const c = this.cam; c.position.copy(P); c.quaternion.copy(cam.quaternion); c.fov = cam.fov; c.aspect = cam.aspect; c.view = cam.view ? Object.assign({}, cam.view) : null; c.updateProjectionMatrix();
+    if (sky) { this.sun.color.copy(sky.sun.color); this.sun.intensity = sky.sun.intensity; this.sun.position.copy(sky.sun.position).sub(sky.sun.target.position); this.sun.target.position.set(0, 0, 0);
+      this.hemi.color.copy(sky.hemi.color); this.hemi.groundColor.copy(sky.hemi.groundColor); this.hemi.intensity = sky.hemi.intensity; }
+  }
+};
+/* planes of the dithered fade of chunk objects (see FOGFP): in front, a little inside the last chunk that is always built
+   (the plane moves with the train, so the newest houses and trees come out of the haze gradually), behind, at the edge where
+   old chunks are dropped */
+const _fp0 = {}, _fp1 = {};
+function objFadePlanes(mid, dir) {
+  dir = dir < 0 ? -1 : 1;
+  const set = (V, s, sg) => { Rail.pose(s - 1, _fp0); Rail.pose(s + 1, _fp1); const dx = _fp1.x - _fp0.x, dz = _fp1.z - _fp0.z, l = Math.hypot(dx, dz) || 1; V.set((_fp0.x + _fp1.x) / 2, (_fp0.z + _fp1.z) / 2, dx / l * sg, dz / l * sg); };
+  set(FOGFP, mid + dir * ((QL.ahead - 1) * CS - 40), dir); set(FOGBP, mid - dir * (QL.ahead + 2) * CS, -dir);
+}
+/* both passes: the far landscape (with the sky) first, then the detailed scene on top */
+function renderAll() {
+  if (!FarLand.scene) { renderer.render(scene, camera); return; }
+  const bg = scene.background; FarLand.scene.background = bg; scene.background = null;
+  renderer.autoClear = true; renderer.render(FarLand.scene, FarLand.cam); renderer.autoClear = false; renderer.clearDepth(); renderer.render(scene, camera); renderer.autoClear = true;
+  scene.background = bg;
+}
+
+/* ===== biome particles: cherry petals and autumn leaves drifting around the camera ===== */
+const BiomeFX = {
+  ps: null, acc: 0,
+  init(scene) { this.ps = new PartSys(scene, 700, false); },
+  update(dt, G, cam) {
+    if (!this.ps) return; const b = G.bio, W = b && b.bw, P = cam.position;
+    if (W && !G.paused && Env.tunnel < .5 && QL.fx > 0) {
+      const sak = W.sakura * Math.min(1, b.forest * 1.6 + .3), au = b.aut * Math.min(1, b.forest * 1.4) * (1 - W.sakura), tot = sak + au;
+      this.acc += dt * (sak * 95 + au * 60) * (1 - Env.rain * .7) * (1 - Env.snow * .8);
+      const cv = G.camVel || { x: 0, z: 0 }, ww = .4 + Env.wind * 2.2, wx = Math.sin(Env.windA) * ww, wz = Math.cos(Env.windA) * ww;
+      while (this.acc > 1) { this.acc -= 1; if (tot <= 0) break;
+        const leaf = Math.random() * tot > sak, r = 9 + Math.random() * 38, a = Math.random() * 6.283, x = P.x + Math.cos(a) * r + (cv.x || 0) * 1.4, z = P.z + Math.sin(a) * r + (cv.z || 0) * 1.4, y = P.y + (Math.random() - .25) * 14;
+        const col = leaf ? [[.9, .5, .1], [.8, .24, .1], [.92, .7, .16], [.6, .34, .12]][Math.random() * 4 | 0] : [[1, .78, .86], [1, .88, .92], [.98, .68, .8]][Math.random() * 3 | 0], sz = leaf ? .22 + Math.random() * .12 : .14 + Math.random() * .1;
+        this.ps.emit(x, y, z, wx + (Math.random() - .5) * 1.2, -.1, wz + (Math.random() - .5) * 1.2, 9 + Math.random() * 7, sz, sz, col, .95, { drag: .45, grav: leaf ? .3 : .14 }); }
+    }
+    /* nothing drifts inside the cab or the carriage the camera is in */
+    if (CamMgr.id === 'cab' || CamMgr.id === 'pass') { const ps = this.ps; for (let k = 0; k < ps.n; k++) if (ps.age[k] < ps.life[k]) { const j = k * 3, dx = ps.pt[j] - P.x, dy = ps.pt[j + 1] - P.y, dz = ps.pt[j + 2] - P.z; if (dx * dx + dy * dy + dz * dz < 25) ps.age[k] = 1e9; } }
+    this.ps.update(dt, cam, renderer);
+  },
+  clear() { if (this.ps) this.ps.clear(); }
+};
+
 /* ===== volcano: deterministic cones far from the track; they can erupt during the volcano event ===== */
 const Volcano = {
   list: new Map(), scene: null, smoke: null, ash: null, erupting: null,
@@ -6017,8 +6332,8 @@ function initEngine() {
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   scene = new THREE.Scene(); camera = new THREE.PerspectiveCamera(70, 1, .3, 7000); scene.add(camera);
   cabLight = new THREE.PointLight(0xffe2b0, 0, 9, 1.5); camera.add(cabLight);
-  initMaterials(); sky = new Sky(scene, camera); precip = new Precip(scene, 4000);
-  G.train = new Train(scene, SettingsManager.v.train, SettingsManager.v.tc[SettingsManager.v.train].nc); CabGlass.attach(G.train.loco); G.phys = new TrainPhysics(G.train.def); G.phys.setDef(G.train.def, G.train.nc); Sound.setProfile(G.train.def.snd); Limits.init(scene); Junctions.init(scene); Traffic.init(scene); Events.init(scene); Aviation.init(scene); Volcano.init(scene); Spaceport.init(scene); G.lim = { cur: 120, allowed: 40, next: null, atp: 'ok', mode: 'warn' }; G.atpBrake = 0; G.atpCut = false;
+  initMaterials(); sky = new Sky(scene, camera); precip = new Precip(scene, 4000); FarLand.init(scene, sky);
+  G.train = new Train(scene, SettingsManager.v.train, SettingsManager.v.tc[SettingsManager.v.train].nc); CabGlass.attach(G.train.loco); G.phys = new TrainPhysics(G.train.def); G.phys.setDef(G.train.def, G.train.nc); Sound.setProfile(G.train.def.snd); Limits.init(scene); Junctions.init(scene); Traffic.init(scene); Events.init(scene); Aviation.init(scene); Volcano.init(scene); BiomeFX.init(scene); Spaceport.init(scene); G.lim = { cur: 120, allowed: 40, next: null, atp: 'ok', mode: 'warn' }; G.atpBrake = 0; G.atpCut = false;
   Dev.init(scene); StopMark.init(scene); WorldGen.init(scene); Passengers.init(scene); StationLife.init(); Wildlife.init(scene); RailTraffic.init(scene); GlowPts.init(scene);
   CamMgr.init(camera); InputManager.init($('gl')); UI.init(G);
   InputManager.onKey = onKey; window.addEventListener('resize', resize); window.addEventListener('orientationchange', () => setTimeout(resize, 200));
@@ -6035,7 +6350,7 @@ function onKey(e) {
   else if (k === 'Escape') { const s = $('settings'); if (s.classList.contains('open')) UI.act('closeset'); else UI.act('settings'); }
 }
 function resetWorld(seed, rt, layout) {
-  G.seed = seed; G.layout = layout || 'dense'; Rail.reset(seed, rt, G.layout); meshClear(); Junctions.reset(); NameTex.clear(); WorldGen.clear(); Passengers.clear(); Stations.reset(); Narrator.reset(); Wildlife.clear(); RailTraffic.reset(); Limits.reset(); Traffic.reset(); Events.reset(); Aviation.reset(); Volcano.reset(); Spaceport.reset(); Weather.rr = rng(seed ^ 0x5bd1e995); Junctions.restore();
+  G.seed = seed; G.layout = layout || 'dense'; Rail.reset(seed, rt, G.layout); Biome.reset(); FarLand.reset(); BiomeFX.clear(); meshClear(); Junctions.reset(); NameTex.clear(); WorldGen.clear(); Passengers.clear(); Stations.reset(); Narrator.reset(); Wildlife.clear(); RailTraffic.reset(); Limits.reset(); Traffic.reset(); Events.reset(); Aviation.reset(); Volcano.reset(); Spaceport.reset(); Weather.rr = rng(seed ^ 0x5bd1e995); Junctions.restore();
 }
 /* start a journey: o = { save } to continue, or { mode, train, layout } for a new one, or { mode: 'tutorial', lesson } */
 function startGame(o) {
@@ -6083,7 +6398,7 @@ function startGame(o) {
       if (G.mode === 'schedule' || G.mode === 'challenge') Stations.nextSched(p, G.mode);
     },
     /* first frame: compiles the shaders for this scene while the loading screen is still up */
-    () => { renderer.render(scene, camera); Loading.set(1); setTimeout(() => Loading.hide(), 160); }
+    () => { FarLand.update(camera, G.phys.s, sky, 1e9); renderAll(); Loading.set(1); setTimeout(() => Loading.hide(), 160); }
   ];
   let i = 0; const run = () => { try { const r = steps[i++](); if (r === 'stop') return; if (r === 'again') i--; } catch (e) { console.error(e); Loading.hide(); Menu.dialog('⚠', _T('Не вдалося запустити подорож'), String(e && e.message || e), [[_T('До меню'), () => Menu.show('journey'), 1]]); return; } if (i < steps.length) next(); };
   /* one painted frame between steps: the bar and the step text really update on screen */
@@ -6113,7 +6428,7 @@ function camTunnel(G) {
 }
 function frame(now) {
   requestAnimationFrame(frame);
-  if (!G.running) { Sound.hold(true); if (!G.idleDrawn) { G.idleDrawn = true; renderer.render(scene, camera); } return; }
+  if (!G.running) { Sound.hold(true); if (!G.idleDrawn) { G.idleDrawn = true; renderAll(); } return; }
   /* behind the main menu the paused world is redrawn at a third of the rate (saves battery) */
   if (G.inMenu && (G.menuF = (G.menuF || 0) + 1) % 3) { G.last = now; return; }
   GlowPts.begin();
@@ -6145,7 +6460,8 @@ function frame(now) {
   if (Env.ecl > .001) { Env.day *= 1 - .9 * Env.ecl; Env.night = 1 - Env.day; } Weather.update(sim, bio); Env.wind = Math.min(1.2, Env.wind + Env.windB); Env.windB *= .97;
   if (G.rebuild) { G.rebuild = false; WorldGen.clear(); WorldGen.flush(mid, p.dir); }
   WorldGen.update(mid, p.dir, G.paused ? 0 : 5);
-  if (sim > 0) { Stations.update(dt, p, tr, G.mode); Passengers.update(dt); StationLife.update(dt); RailTraffic.update(dt, p, camera.position); Wildlife.update(dt, p, G.t); Traffic.update(dt, G, camera.position); if (G.mode !== 'tutorial') Events.update(dt, G, camera, renderer); Aviation.update(dt, G, camera, renderer); Volcano.update(dt, G, camera, renderer); Spaceport.update(dt, G, camera, renderer); Narrator.update(dt * (G.mode === 'scenic' ? 2 : 1), p, bio); }
+  objFadePlanes(mid, p.dir);
+  if (sim > 0) { Stations.update(dt, p, tr, G.mode); Passengers.update(dt); StationLife.update(dt); RailTraffic.update(dt, p, camera.position); Wildlife.update(dt, p, G.t); Traffic.update(dt, G, camera.position); if (G.mode !== 'tutorial') Events.update(dt, G, camera, renderer); Aviation.update(dt, G, camera, renderer); Volcano.update(dt, G, camera, renderer); BiomeFX.update(dt, G, camera); Spaceport.update(dt, G, camera, renderer); Narrator.update(dt * (G.mode === 'scenic' ? 2 : 1), p, bio); }
   if (sim > 0) { Tutor.update(dt); Stats.tick(dt, G); Achievements.tick(dt); } Guide.update(dt); Profile.tick(dt);
   tr.items[0].g.getWorldPosition(G.mid); tr.pointAt(tr.length * .4, 0, 0, G.mid); sky.shadowTarget = G.mid;
   /* camera */
@@ -6181,7 +6497,10 @@ function frame(now) {
   Sound.hold(!!G.paused); Sound.update(dt, { axles: tr.axleW, lw, extK, jointed: vn1(p.s / 9000, Rail.seed + 41) <= .38 || bio.stf > .2, points: pts, comp: p.p < 4.9 && p.brake < .08 && !p.emerg, airPos: Aviation.loudPos, speed: p.v, thr: p.throttle, brakeF: (5 - p.p) / 5, inside: id === 'cab' ? 1 : id === 'roof' ? .3 : (id === 'walk' || id === 'pass') ? .7 : 0, cam: id === 'cab' ? 'cab' : (id === 'walk' || id === 'pass') ? 'pass' : 'ext', rain: Env.rain, wind: Env.wind, tunnel: Env.tunnel, bridge: bio.deck ? 1 : 0, near: clamp(1 - dist / 160, 0, 1) * (Passengers.list.length > 0 ? 1 : 0) * (.6 + Math.min(.8, Passengers.list.length / 70)), oth: RailTraffic.loud(camera.position), urban: bio.urban, road: Traffic.near, air: Math.max(Aviation.loud, Spaceport.launch ? .0 : 0), forest: bio.forest, day: Env.day, dp: G.dp || 0 });
   Music.update(dt, SettingsManager.v.musicOn);
   GlowPts.end(camera, renderer);
-  renderer.render(scene, camera);
+  /* height fog: the haze layer sits on the valley floor of the line near the train and is thicker in mist, rain and snow */
+  FOGHB.x = Rail.ty(p.s) - 2; FOGHB.y = 190 + 450 * Env.fogK + 260 * Env.rain + 200 * Env.snow + (Env.mapMode ? 2000 : 0);
+  FarLand.update(camera, p.s, sky, QL.detail > 1 ? 2.5 : 1.5);
+  renderAll();
   UI.hud(G, dt); UI.glass(dt, G);
   G.saveT -= dt; if (G.saveT < 0) { G.saveT = 5; G.save(); evictZoneTex(Math.floor(p.s / Z)); housekeep(); }
 }

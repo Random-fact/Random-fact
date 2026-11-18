@@ -295,3 +295,58 @@ Device in the screenshots: about 834×375 CSS px landscape. All checks below wer
   * Lesson → menu: silent.
   * Events panel: the train keeps driving.
   * Regression and full scenarios pass.
+
+## Update 18 Nov 2026 (7): biome system
+* World structure:
+  * The line runs through regions of 7–20 km, each one of nine biomes: cherry blossom (sakura), grand mountain range,
+    dense evergreen forest, golden grasslands, desert and canyons, alpine meadows, wetlands and lakes, autumn forest,
+    and the mixed temperate land of the earlier versions. Neighbours follow geography (mountains ↔ alpine meadows,
+    evergreen forest or desert; desert ↔ grasslands, alpine slopes or mountains; wetlands ↔ forests, plains, sakura…).
+    The same region never repeats back to back or within three regions; a biome that has not been seen for a while
+    becomes more likely, so all nine come back on a long trip.
+  * Everything is deterministic from the world seed and is computed per point along the line, so chunks stay continuous
+    and the same world comes back after a restart.
+  * Between two regions there is a 2.6 km transition (4 km into and out of the mountains). Weights change with a
+    smoothstep; every tree belongs to one of the two regions with these weights, so the species mix changes gradually.
+* What a biome changes:
+  * Relief: high ridged peaks (up to ~1.6 km above the line) and foothills in the mountains, distant ranges seen from the
+    alpine and evergreen regions, mesas and terraces in the canyon variant of the desert, dunes, lakes in the wetlands,
+    gentle hills on the grasslands. Snow line and bare-rock zone depend on altitude, lower in cold regions.
+  * Ground colours: golden grass, alpine green with flower spots near the line, fallen petals and leaves under the
+    groves, sandstone strata, mud in the swamps.
+  * Vegetation: spruce/fir/pine forests, cherry trees and cherry alleys, oak/maple/birch in autumn colours, willows and
+    dead snags in the wetlands, cacti and sandstone pillars in the desert, hay bales on the plains.
+  * Settlements and zones: house styles per region (Japanese-style in sakura regions with pagodas and torii, adobe in
+    the desert, mountain chalets), more tunnels and gorge bridges in the mountains, more bridges in the wetlands.
+  * Particles: drifting cherry petals and autumn leaves around the camera (never inside the cab or carriage).
+* Seeing far:
+  * A far landscape layer (polar grid to 38 km) is drawn first with the sky, then the detailed chunks on top. It uses
+    the same height and colour functions as the chunks, shows forests as a canopy layer, and is cut out exactly
+    (per pixel, in world space) under the detailed chunks. It is rebuilt in the background in small slices (1.5–2.5 ms
+    per frame) when the camera has moved 900 m.
+  * Height fog: haze is thick in the valley and thin higher up, so mountain ranges stay visible above it from many km.
+  * No pop-in: the objects of the newest chunks (houses, trees, poles) appear with a dither over ~400 m at the edge of
+    the generated area instead of appearing at once; the oldest chunks behind fade the same way before they are dropped.
+* Bugs found and fixed while testing:
+  * The far layer's triangles faced downwards: from above it was invisible and from the ground only the back sides of
+    distant hills showed (dark silhouettes). Fixed the winding; mountains and plains are now lit correctly far away.
+  * The cut-out under the near chunks interpolated line coordinates over huge far triangles and could cut wrong holes.
+    Replaced by an exact per-pixel test against the line polyline.
+  * Canopy beyond the tree belt started with a steep edge (dark line at ~300 m) and covered sparse orchards fully;
+    now it rises over 230–520 m and covers only the share of the ground the crowns hide.
+  * Alpine green and flower spots were too saturated; far cherry canopy looked like snow; autumn far canopy too bright.
+* Check (Chromium + SwiftShader, software rendering; frame times there are not meaningful for phones):
+  * All nine biomes from the cab and from a free camera 60 m up; approach views 6 km before mountains, sakura, alpine
+    and autumn regions: the mountain range is visible on the horizon before the region starts.
+  * Transitions grassland→autumn, evergreen→mountains, alpine→sakura, wetland→grassland, desert→mountains at
+    −2.6 … +2.6 km from the border: weights 0.03 → 0.31 → 0.69 → 0.97, no visible seam.
+  * All 10 cameras (cab, walk, carriage window, chase, cinematic, roof, rear, free orbit, photo, map) in a mountain
+    region at 834×375, and cab/chase/orbit/map in portrait 390×844 (lens shift): far layer and chunks line up.
+  * High view towards the generation edge: no hole, no gap between near and far land.
+  * Variety: 4 seeds × 400 km: all nine biomes in every seed, no region repeated back to back.
+  * Performance against the previous build, same seed and places (10 views, high and low tier): draw calls −15 … +11,
+    triangles similar or lower (far layer adds ~3.7 k triangles in one draw call); chunk build 15–21 ms as before.
+  * Long run 391 km: memory flat (heap 73 MB, geometries 90–135), no growth.
+  * Regression: UI scenarios at 834×375 and 390×844 (no overlaps), dialogs, continue/save, pause in menus (train
+    stops, sound off), menu scroll, photo-mode translations in 9 languages, driver lessons, desktop/phone/landscape.
+* Not checked: a real phone (GPU fill rate of the far layer and the dither on a mobile GPU).
