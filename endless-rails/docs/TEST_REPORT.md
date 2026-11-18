@@ -232,3 +232,43 @@ Device in the screenshots: about 834×375 CSS px landscape. All checks below wer
   0.37 s, the progress changed 10 → 40 → 65 → 75 → 100 %, then the menu opened, with no errors. First start with a
   Japanese locale opens the language screen in Japanese. Full regression passed after the change: desktop / phone /
   landscape journeys, dialogs, continue, lessons, menu scroll, photo-mode translations, offline APK page with 0 requests.
+
+## Update 18 Nov 2026 (5): volcano and objects in the air
+**Volcano (both screenshots).**
+* Ash column without the mountain: the event can pick a volcano that the train then leaves behind (150 s at up to
+  1000 km/h in the sandbox). The ash particles are drawn at any distance, but the cone was hidden beyond 6.3 km.
+  → An erupting volcano stays in view as long as its column does: it is projected onto the same 5.3 km sphere as the
+  particles, so the column always rises from its crater. A quiet volcano fades into the haze towards 6.3 km instead of
+  popping out.
+* Cone in the air: volcanoes stand 1.6–2.4 km from the line, but the ground was generated only to 1.1 km, and the cone
+  ignored the fog while the ground at that distance is almost fully fogged.
+  → The ground now continues to 3.4 km on both sides. The cone stands on the lowest rendered ground under its foot and
+  continues into it. Its fog is height-graded: full haze at its foot, like the ground around it; half haze at the top,
+  so it stays visible.
+
+**The same kind of error elsewhere (whole world checked).**
+* Spaceport: it also stood beyond the ground, on a floating disc. Now it uses the flattest of 6 candidate places in its
+  region on real ground, with a low earthwork whose 1:5 sides take the local ground colour. Where no level place
+  exists, there is no spaceport. It uses the same height-graded haze; the rocket launch works.
+* 15 placements used the smooth analytic ground height, while the visible ground is a coarser mesh. Between mesh
+  points the two differ by up to several metres on hills, so objects floated or sank. Now they use the rendered
+  ground, and the lowest point under the footprint for buildings and landmarks. Affected: rocks, bushes and flowers,
+  mountain boulders, desert cacti and dry bushes, swamp trees and reeds, town landmarks (church, clock tower,
+  stadium, castle, TV tower, water tower, mill), industrial buildings, city blocks, village houses, level-crossing
+  details, road-bridge abutments, cars at road crossings, animals, and event objects (landslide rocks, fallen tree
+  and others).
+* Swamp trees looked like bare posts with detached shadows. They now stand on the ground and look like dead trees:
+  leaning trunk, broken top, bare branches, sometimes a sparse crown. There are fewer of them.
+* Generation artefacts found during the sweep:
+  * Long coloured stripes of flowers, fields and sand on distant ground, and lakes stretched into straight bands at
+    300–1000 m. Cause: mesh columns hundreds of metres apart. Fix: mid-distance columns at most ~250 m apart; fine
+    detail fades with distance; only large landforms remain beyond ~1 km.
+  * A journey save without a clock value made the sky colour NaN; it now falls back to the morning.
+* Check:
+  * Elevated views of 14 zone and biome types with a fixed world seed (city, village, industrial, station, bridge,
+    tunnel, junction, mountains, coast, swamp, desert, forest, fields, lakes).
+  * Volcano from the track, from 120 m up, from 900 m, from 5.6–6.2 km, from the HS cab at 274 km/h, through a city.
+  * Spaceport from the track, from above, near the site, and during a launch.
+  * Regression (desktop / phone journeys, dialogs, continue, lessons, full scenarios at 834×375 and 390×844).
+  * Offline APK page: 0 requests, 0 errors.
+  * The terrain mesh grew by about 9 k triangles in total (≈ +30 % terrain vertices); draw calls unchanged.

@@ -1376,7 +1376,7 @@ const Geo = {
 /* ===== WorldGenerator: terrain strips, track, trees (per 200 m chunk) ===== */
 const CS = 200, RSTEP = 8, NR = 25;
 /* terrain columns (lateral offsets): dense around the double-track formation so that ballast shoulders, slopes and retaining walls stay crisp */
-const UC = (() => { const R = [0, 1.8, 3.4, 4.6, 7, 10, 14, 20, 28, 38, 52, 70, 94, 125, 165, 225, 305, 425, 700, 1100]; return [...R.slice().reverse().map(d => -U2 - d), BEDC, ...R]; })();
+const UC = (() => { const R = [0, 1.8, 3.4, 4.6, 7, 10, 14, 20, 28, 38, 52, 70, 94, 125, 165, 225, 305, 400, 510, 640, 800, 1000, 1250, 1650, 2400, 3400];  /* mid-distance columns at most ~250 m apart (lakes keep their shape); the last three: far ground under volcanoes and the spaceport */ return [...R.slice().reverse().map(d => -U2 - d), BEDC, ...R]; })();
 const NC = UC.length;
 const QL = { tree: 1, shadow: 0, ahead: 8, precip: 1, fx: 1, detail: 2, fog: 1, traffic: 1, ai: 4, beam: 1, pax: 1, clouds: .88 }; // live quality knobs (set by Quality)
 
@@ -1384,14 +1384,16 @@ function electrified(s) { if (typeof G !== 'undefined' && G.train && G.train.typ
 
 function k6(s, u) { return H(s | 0, u | 0, 5) * 6; }
 function terrH(b, u, x, z) {
-  const sd = Rail.seed, au = Math.abs(u);
-  const nf = fbm2(x / 420, z / 420, sd + 1, 4);
+  /* beyond ~1 km the mesh columns are 0.5-1 km apart: only the large forms remain there (smaller hills, lakes and ponds
+     would be stretched into long stripes along the line) */
+  const sd = Rail.seed, au = Math.abs(u), fo = 1 - sm(950, 1500, au);
+  const nf = lerp(fbm2(x / 1600, z / 1600, sd + 1, 2), fbm2(x / 420, z / 420, sd + 1, 4), fo);
   let h = b.ty + (nf - .5) * lerp(16, 70, b.mount) * (.4 + .6 * sm(10, 90, au));
   if (b.mount > .02) { const rg = fbm2(x / 900 + 5, z / 900, sd + 2, 3), rd = 1 - Math.abs(2 * rg - 1); h += b.mount * rd * rd * 190 * sm(70, 520, au); }
-  if (b.lw > .02) { const lk = sm(.64, .7, fbm2(x / 650, z / 650, sd + 3, 2)) * b.lw * sm(30, 70, au) * (1 - b.mount); if (lk > 0) h = lerp(h, -2.5, lk); }
-  if (b.lw > .02) { const isl = sm(.74, .78, fbm2(x / 170 + 9, z / 170, sd + 9, 2)) * sm(30, 70, au); if (isl > 0 && h < -1) h = lerp(h, 1.6 + 2 * fbm2(x / 40, z / 40, sd + 10, 2), isl * b.lw); }
-  if (b.arid > .02) h += b.arid * (vn2(x / 190, z / 190, sd + 7) - .5) * 15 * sm(10, 60, au) + b.arid * (vn2(x / 45, z / 45, sd + 11) - .5) * 2.2 * sm(10, 40, au);
-  if (b.swamp > .02) { const pd = sm(.6, .68, fbm2(x / 110 + 4, z / 110, sd + 8, 2)) * b.swamp * sm(24, 60, au); h = lerp(h, b.ty - .5 - 2.2 * pd, b.swamp * .7 * sm(10, 50, au)); if (pd > 0) h = lerp(h, -1.3, pd); }
+  if (b.lw > .02) { const lk = sm(.64, .7, fbm2(x / 650, z / 650, sd + 3, 2)) * b.lw * sm(30, 70, au) * (1 - b.mount) * fo; if (lk > 0) h = lerp(h, -2.5, lk); }
+  if (b.lw > .02) { const isl = sm(.74, .78, fbm2(x / 170 + 9, z / 170, sd + 9, 2)) * sm(30, 70, au) * fo; if (isl > 0 && h < -1) h = lerp(h, 1.6 + 2 * fbm2(x / 40, z / 40, sd + 10, 2), isl * b.lw); }
+  if (b.arid > .02) h += (b.arid * (vn2(x / 190, z / 190, sd + 7) - .5) * 15 * sm(10, 60, au) + b.arid * (vn2(x / 45, z / 45, sd + 11) - .5) * 2.2 * sm(10, 40, au)) * fo;
+  if (b.swamp > .02) { const pd = sm(.6, .68, fbm2(x / 110 + 4, z / 110, sd + 8, 2)) * b.swamp * sm(24, 60, au) * fo; h = lerp(h, b.ty - .5 - 2.2 * pd, b.swamp * .7 * sm(10, 50, au)); if (pd > 0) h = lerp(h, -1.3, pd); }
   if (b.coast > 0) h = lerp(h, -14, sm(60, 300, u * b.side) * b.coast);
   /* formation: ballast shoulder, then an engineered embankment (1:1.6) or cutting (1:1.2, rock cuts 1:0.6); some cuttings get a retaining wall */
   { const hn = h, bed = b.ty - .45, d0 = Math.max(0, bedD(u) - BEDW), d1 = b.jz ? Math.max(0, bedD(u - b.ju) - BEDW) : 1e9, ks = b.mount > .45 ? 1.65 : .85;
@@ -1436,6 +1438,9 @@ function roadSpan(s, lo, hi) {
   }
   r = [L, R]; if (RSPAN.size > 400) RSPAN.clear(); RSPAN.set(key, r); return r;
 }
+/* lowest point of the rendered ground under a footprint (centre + 8 points on radius r): buildings and landmarks stand on it
+   and run into the slope on the uphill side, so no corner of them hangs in the air */
+function groundMin(s, u, r) { let h = meshH(s, u); if (r > 0) for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; h = Math.min(h, meshH(s + Math.cos(a) * r, u + Math.sin(a) * r)); } return h; }
 function meshRow(s0) { let r = MHC.get(s0); if (!r) { if (MHC.size > 900) MHC.clear(); const p = Rail.pose(s0, {}); r = { p, b: Rail.bio(s0), c: Math.cos(p.hd), sn: Math.sin(p.hd), h: new Float64Array(NC).fill(NaN) }; MHC.set(s0, r); } return r; }
 function meshGH(r, k) { let h = r.h[k]; if (h !== h) { const u = UC[k]; h = r.h[k] = terrH(r.b, u, r.p.x - r.c * u, r.p.z + r.sn * u); } return h; }
 function meshH(s, u) {
@@ -1446,22 +1451,25 @@ function meshH(s, u) {
 }
 const _col = [0, 0, 0];
 function terrColor(b, u, x, z, h) {
-  const sd = Rail.seed, au = Math.abs(u), n1 = vn2(x / 37, z / 37, sd + 5), dry = vn2(x / 300, z / 300, sd + 6);
+  /* far from the line the mesh columns are hundreds of metres apart: fine detail (37 m noise, 90 m fields, flowers) would
+     stretch into long stripes there, so it fades to the local average with the distance from the track */
+  const sd = Rail.seed, au = Math.abs(u), far = sm(250, 900, au), n1 = lerp(vn2(x / 37, z / 37, sd + 5), .5, far), dry = vn2(x / 300, z / 300, sd + 6);
   let r = .2 + .16 * dry + .05 * n1, g = .36 + .1 * (1 - dry) + .04 * n1, bl = .14 + .03 * dry;
   const f = b.forest * (1 - sm(.1, .4, b.urban)) * .7;
   r = lerp(r, .1, f); g = lerp(g, .25, f); bl = lerp(bl, .1, f * .8);
   if (b.field > .35 && au > 14) {
-    const cell = H(Math.floor(x / 90), Math.floor(z / 90), sd + 9), st = Math.sin((x * .8 + z * .6) / 7) * .03, k = (b.field - .35) / .65 * (1 - sm(0, 6, -h));
-    const fr = cell < .3 ? .62 : cell < .55 ? .3 : cell < .8 ? .5 : .24, fg = cell < .3 ? .55 : cell < .55 ? .5 : cell < .8 ? .38 : .42, fb = cell < .3 ? .2 : cell < .55 ? .17 : cell < .8 ? .2 : .13;
+    const cell = H(Math.floor(x / 90), Math.floor(z / 90), sd + 9), st = Math.sin((x * .8 + z * .6) / 7) * .03 * (1 - far), k = (b.field - .35) / .65 * (1 - sm(0, 6, -h));
+    const fr = lerp(cell < .3 ? .62 : cell < .55 ? .3 : cell < .8 ? .5 : .24, .41, far), fg = lerp(cell < .3 ? .55 : cell < .55 ? .5 : cell < .8 ? .38 : .42, .46, far), fb = lerp(cell < .3 ? .2 : cell < .55 ? .17 : cell < .8 ? .2 : .13, .17, far);
     r = lerp(r, fr + st, k * .85); g = lerp(g, fg + st, k * .85); bl = lerp(bl, fb, k * .85);
   }
   const rk = b.mount * sm(15, 90, h - b.ty + 20);
   r = lerp(r, .42 + .06 * n1, rk); g = lerp(g, .4 + .05 * n1, rk); bl = lerp(bl, .38 + .05 * n1, rk);
-  if (b.meadow > .2 && au > 12) { const m = b.meadow, fl = vn2(x / 3.2, z / 3.2, sd + 12), pick = vn2(x / 14, z / 14, sd + 13); r = lerp(r, .22, m * .6); g = lerp(g, .5, m * .6); bl = lerp(bl, .15, m * .6);
-    if (fl > .78) { const k = m * sm(.78, .86, fl); const c = pick < .33 ? [.95, .3, .3] : pick < .66 ? [.98, .88, .25] : [.96, .96, .98]; r = lerp(r, c[0], k); g = lerp(g, c[1], k); bl = lerp(bl, c[2], k); } }
+  /* flower patches only where the mesh is fine enough to show them as patches (near the line; 3D flowers stand there too) */
+  if (b.meadow > .2 && au > 12) { const m = b.meadow, fl = vn2(x / 7, z / 7, sd + 12), pick = vn2(x / 14, z / 14, sd + 13); r = lerp(r, .22, m * .6); g = lerp(g, .5, m * .6); bl = lerp(bl, .15, m * .6);
+    if (fl > .78 && au < 50) { const k = m * sm(.78, .86, fl) * (1 - sm(25, 50, au)); const c = pick < .33 ? [.95, .3, .3] : pick < .66 ? [.98, .88, .25] : [.96, .96, .98]; r = lerp(r, c[0], k); g = lerp(g, c[1], k); bl = lerp(bl, c[2], k); } }
   if (b.arid > .02) { const dn = vn2(x / 190, z / 190, sd + 7), k = b.arid * (1 - sm(0, 8, 14 - au)) ; const c = [.78 - .08 * dn + .04 * n1, .66 - .09 * dn, .42 - .08 * dn]; r = lerp(r, c[0], k); g = lerp(g, c[1], k); bl = lerp(bl, c[2], k); }
   if (b.swamp > .02) { const k = b.swamp * (1 - sm(0, 10, 14 - au)) * .85, mud = vn2(x / 9, z / 9, sd + 14); r = lerp(r, .16 + .06 * mud, k); g = lerp(g, .2 + .05 * mud, k); bl = lerp(bl, .1, k); }
-  const sand = 1 - sm(.3, 2.4, h); r = lerp(r, .74, sand * .9); g = lerp(g, .68, sand * .9); bl = lerp(bl, .48, sand * .9);
+  const sand = (1 - sm(.3, 2.4, h)) * (1 - far * .75); r = lerp(r, .74, sand * .9); g = lerp(g, .68, sand * .9); bl = lerp(bl, .48, sand * .9);
   const wet = 1 - sm(-3, 0, h); r = lerp(r, .07, wet); g = lerp(g, .17, wet); bl = lerp(bl, .2, wet);
   const sn = b.snow * (1 - sm(0, 2, -h)) * (.85 + .15 * n1); r = lerp(r, .93, sn); g = lerp(g, .95, sn); bl = lerp(bl, .98, sn);
   const bd = bedD(u), gr = (1 - sm(2.8, 4.0, bd)) * (1 - b.dip); r = lerp(r, .34, gr * (1 - sn * .6)); g = lerp(g, .32, gr * (1 - sn * .6)); bl = lerp(bl, .29, gr * (1 - sn * .6));
@@ -1658,8 +1666,14 @@ class Chunk {
         const ss = s + (H(s | 0, u | 0, sd + 41) - .5) * 10, uu = u + (H(s | 0, u | 0, sd + 42) - .5) * 10;
         const x = p.x - c * uu + sn * (ss - s) * 0, z = p.z + sn * uu + c * (ss - s) * 0;
         const bb = b, h = terrH(bb, uu, x, z); if (h < .6 || h > 95) continue;
-        if (b.arid > .35) { if (H(s | 0, u | 0, sd + 46) < .5 && au > 16) { const hc = terrH(b, uu, x, z); if (hc > .6) { if (H(s | 0, u | 0, sd + 47) < .5) { L.add(TPL.cyl, x, hc - .1, z, .55, 2.4 + H(s | 0, u | 0, 8) * 1.4, .55, 0, 0, [.2, .45, .22]); L.add(TPL.cyl, x + .5, hc + 1, z, .32, 1.2, .32, 0, 0, [.2, .45, .22]); } else L.add(TPL.ico, x, hc + .2, z, 1.6, .9, 1.6, k6(s, u), 0, [.5, .45, .26]); } } continue; }
-        if (b.swamp > .4 && au > 14) { const hc = terrH(b, uu, x, z); if (hc > -.5) { if (H(s | 0, u | 0, sd + 48) < .35) { L.add(TPL.cyl, x, hc, z, .35, 5 + H(s | 0, u | 0, 9) * 3, .35, 0, 0, [.25, .2, .16]); L.add(TPL.cyl, x + .6, hc + 3, z, .12, 2, .12, 0, .8, [.25, .2, .16]); } else for (let rr = 0; rr < 4; rr++) L.add(TPL.cone, x + rr * .35, hc, z + (rr % 2) * .3, .22, 1.8, .22, 0, 0, [.34, .42, .16]); } continue; }
+        if (b.arid > .35) { if (H(s | 0, u | 0, sd + 46) < .5 && au > 16) { const hc = meshH(s, uu) - .15; if (hc > .6) { if (H(s | 0, u | 0, sd + 47) < .5) { L.add(TPL.cyl, x, hc - .1, z, .55, 2.4 + H(s | 0, u | 0, 8) * 1.4, .55, 0, 0, [.2, .45, .22]); L.add(TPL.cyl, x + .5, hc + 1, z, .32, 1.2, .32, 0, 0, [.2, .45, .22]); } else L.add(TPL.ico, x, hc + .2, z, 1.6, .9, 1.6, k6(s, u), 0, [.5, .45, .26]); } } continue; }
+        if (b.swamp > .4 && au > 14) { const hc = meshH(s, uu) - .25; if (hc > -.5) { if (H(s | 0, u | 0, sd + 48) < .12) {
+            /* dead swamp tree: leaning grey trunk with a broken top and a few bare branches */
+            const th = 4 + H(s | 0, u | 0, 9) * 3.5, lean = (H(s | 0, u | 0, 10) - .5) * .25, bc = [.3, .28, .25], a0 = H(s | 0, u | 0, 11) * 6.28;
+            L.add(TPL.cyl, x, hc - .2, z, .42, th + .2, .42, a0, lean, bc); L.add(TPL.cone, x - Math.sin(a0) * lean * th, hc + th - .1, z - Math.cos(a0) * lean * th, .4, .7, .4, a0, lean, bc);
+            for (let k = 0; k < 3; k++) { const f = .45 + k * .17, yb = hc + th * f, ab = a0 + 2.1 * k + 1, tx = x - Math.sin(a0) * lean * th * f, tz = z - Math.cos(a0) * lean * th * f; L.add(TPL.cyl, tx, yb, tz, .1, 1.3 - k * .25, .1, ab, .9, bc); }
+            if (H(s | 0, u | 0, 12) < .55) L.add(TPL.ico, x - Math.sin(a0) * lean * th * .8, hc + th * .8, z - Math.cos(a0) * lean * th * .8, 2.2, 1.4, 2.2, a0, 0, [.2, .26, .12]); /* a sparse crown on some */
+          } else for (let rr = 0; rr < 4; rr++) L.add(TPL.cone, x + rr * .35, hc, z + (rr % 2) * .3, .22, 1.8, .22, 0, 0, [.34, .42, .16]); } continue; }
         /* trees stand on the RENDERED terrain (the coarse mesh), not the analytic height, and every trunk is base-anchored
            and sunk 0.6 m so it never floats or disappears on slopes; species: spruce, pine, oak/maple, birch, poplar, bush */
         const g0 = meshH(s, uu), k = H(s | 0, u | 0, sd + 43), ht = 7 + H(s | 0, u | 0, sd + 44) * 9, j = H(s | 0, u | 0, sd + 45) * .08, sp = H(s | 0, u | 0, sd + 49);
@@ -1696,7 +1710,7 @@ class Chunk {
         }
       }
       if (q > .5 && b.urban < .3 && b.arid < .3) for (let n = 0; n < 5; n++) {
-        const u = (H(s | 0, n, sd + 55) - .5) * 160, au = Math.abs(u); if (bedD(u) < 10 || road || (b.stn > .1 && au < 70)) continue; const x = p.x - c * u, z = p.z + sn * u, h = terrH(b, u, x, z); if (h < .7 || h > 80) continue;
+        const u = (H(s | 0, n, sd + 55) - .5) * 160, au = Math.abs(u); if (bedD(u) < 10 || road || (b.stn > .1 && au < 70)) continue; const x = p.x - c * u, z = p.z + sn * u, h = meshH(s, u); if (h < .7 || h > 80) continue;
         const kk = H(s | 0, n, sd + 56);
         if (b.meadow > .3 && kk < .6) { const cc = [[.95, .3, .3], [.98, .88, .25], [.96, .96, .98], [.7, .4, .9]][Math.floor(H(s | 0, n, 57) * 4)]; for (let f = 0; f < 3; f++) L.add(TPL.ico, x + f * .5, h + .25, z + (f % 2) * .4, .3, .22, .3, 0, 0, cc); }
         else if (b.forest > .35 && kk < .5) L.add(TPL.ico, x, h + .5, z, 1.5 + kk * 2, 1.1 + kk, 1.5 + kk * 2, kk * 6, 0, [.1 + kk * .08, .27 + kk * .1, .09]);
@@ -1704,7 +1718,7 @@ class Chunk {
       }
       if (b.mount > .25) for (let n = 0; n < 2; n++) {
         const u = (H(s | 0, n, sd + 50) - .5) * 400; if (Math.abs(u) < 14 || H(s | 0, n, sd + 51) > b.mount * .5) continue;
-        const x = p.x - c * u, z = p.z + sn * u, h = terrH(b, u, x, z), w = 3 + H(s | 0, n, sd + 52) * 7;
+        const x = p.x - c * u, z = p.z + sn * u, w = 3 + H(s | 0, n, sd + 52) * 7, h = groundMin(s, u, w * .4);
         L.add(TPL.ico, x, h + w * .2, z, w, w * .6, w * .9, H(s | 0, n, 5) * 6, 0, [.4 + b.snow * .5, .39 + b.snow * .5, .37 + b.snow * .5]);
       }
     }
@@ -1754,7 +1768,7 @@ const ZoneDecor = {
   landmark(ch, B, z) {
     const T = Rail.town(z), kind = T.landmark, s = z.c + 40, side = H(Rail.seed, z.zi, 240) < .5 ? -1 : 1, u = side * (z.kind === 'city' || z.sk === 'city' ? 110 : 62);
     if (kind === 'немає' || s < ch.s0 || s >= ch.s1) return;
-    const L = this.loc(s, u), y = terrH(Rail.bio(s), u, L.x, L.z), W = [.86, .84, .78];
+    const L = this.loc(s, u), y = groundMin(s, u, { 'церква': 10, 'годинникова вежа': 6, 'стадіон': 42, 'замок': 24, 'телевежа': 7, 'водонапірна вежа': 6, 'млин': 6 }[kind] || 8), W = [.86, .84, .78];
     if (kind === 'церква') { B.build.add(TPL.boxB, L.x, y - .2, L.z, 10, 9, 18, L.hd, 0, [.88, .86, .8], 1, 1); B.lit.add(TPL.boxB, L.x, y + 8.8, L.z, 5, 22, 5, L.hd, 0, W); B.lit.add(TPL.pyr, L.x, y + 30.8, L.z, 6, 10, 6, 0, 0, [.25, .3, .32]); B.lit.add(TPL.pyr, L.x, y + 8.8, L.z, 11, 4, 19, L.hd, 0, [.4, .3, .25]); }
     else if (kind === 'годинникова вежа') { B.build.add(TPL.boxB, L.x, y - .2, L.z, 8, 32, 8, L.hd, 0, [.8, .74, .62], 1, 2); B.lit.add(TPL.pyr, L.x, y + 31.8, L.z, 9, 10, 9, 0, 0, [.3, .34, .36]); for (const a of [0, 1, 2, 3]) B.emis.add(TPL.box, L.x + Math.sin(a * 1.5708) * 4.1, y + 26, L.z + Math.cos(a * 1.5708) * 4.1, a % 2 ? .2 : 3, 3, a % 2 ? 3 : .2, 0, 0, [1, .95, .7]); }
     else if (kind === 'стадіон') { for (const k of [-1, 1]) { B.lit.add(TPL.boxB, L.x + Math.cos(L.hd) * k * 30, y - .2, L.z - Math.sin(L.hd) * k * 30, 6, 11, 70, L.hd, 0, [.62, .62, .66]); B.lit.add(TPL.boxB, L.x + Math.sin(L.hd) * k * 38, y - .2, L.z + Math.cos(L.hd) * k * 38, 60, 11, 6, L.hd, 0, [.62, .62, .66]); B.lit.add(TPL.cyl, L.x + Math.cos(L.hd) * k * 34 + Math.sin(L.hd) * 40, y, L.z - Math.sin(L.hd) * k * 34 + Math.cos(L.hd) * 40, 1, 36, 1, 0, 0, [.5, .5, .52]); B.emis.add(TPL.box, L.x + Math.cos(L.hd) * k * 34 + Math.sin(L.hd) * 40, y + 36, L.z - Math.sin(L.hd) * k * 34 + Math.cos(L.hd) * 40, 4, 1.2, 4, 0, 0, [1, 1, .9]); } B.lit.add(TPL.boxB, L.x, y - .1, L.z, 56, .2, 66, L.hd, 0, [.2, .48, .2]); }
@@ -1769,7 +1783,7 @@ const ZoneDecor = {
       const d = Math.abs(s - z.c); if (d > z.half) continue;
       const bi = Rail.bio(s);
       for (let sg = -1; sg <= 1; sg += 2) {
-        const r = H(s | 0, sg, sd + 80), u = sg * (46 + H(s | 0, sg, sd + 81) * 50), L = this.loc(s, u), y = terrH(bi, u, L.x, L.z);
+        const r = H(s | 0, sg, sd + 80), u = sg * (46 + H(s | 0, sg, sd + 81) * 50), L = this.loc(s, u), y = groundMin(s, u, r < .3 ? 20 : 12);
         if (r < .3) B.build.add(TPL.boxB, L.x, y - .2, L.z, 24 + r * 30, 9 + r * 14, 36, L.hd, 0, [.55, .58, .6], 1.6, .8);
         else if (r < .5) { B.lit.add(TPL.cyl, L.x, y - .2, L.z, 12, 22 + r * 20, 12, 0, 0, [.78, .78, .8]); B.lit.add(TPL.cyl, L.x + 14, y - .2, L.z, 12, 20, 12, 0, 0, [.74, .74, .78]); }
         else if (r < .62) { B.lit.add(TPL.cyl, L.x, y - .2, L.z, 4, 55, 4, 0, 0, [.5, .45, .42]); B.lit.add(TPL.cyl, L.x, y + 40, L.z, 4.2, 4, 4.2, 0, 0, [.8, .2, .15]); B.emis.add(TPL.box, L.x, y + 55, L.z, 1, 1, 1, 0, 0, [1, .1, .1]); }
@@ -1801,7 +1815,7 @@ const ZoneDecor = {
     if (!city) for (const [e, sg] of [[sp[0], -1], [sp[1], 1]]) if (Math.abs(e) < RMAX - 40) this.dest(ch, B, s, e, sg, z);
     /* rubber crossing panels across both tracks, white stop lines and edge marks */
     for (const ut of [0, -U2]) { const L = this.loc(s, ut); B.lit.add(TPL.box, L.x, L.ty - .12, L.z, 3.1, .1, 7.2, L.hd, 0, [.24, .24, .25]); }
-    for (const [uu, f] of [[8.2, 1], [-12.8, -1]]) { const L = this.loc(s - 1.75 * f, uu); B.lit.add(TPL.box, L.x, (uu > 0 ? terrH(bi, uu, L.x, L.z) : terrH(bi, uu, L.x, L.z)) + .07, L.z, .4, .03, 3.4, L.hd + Math.PI / 2, 0, [.92, .92, .9]); }
+    for (const [uu, f] of [[8.2, 1], [-12.8, -1]]) { const L = this.loc(s - 1.75 * f, uu); B.lit.add(TPL.box, L.x, meshH(s - 1.75 * f, uu) + .07, L.z, .4, .03, 3.4, L.hd + Math.PI / 2, 0, [.92, .92, .9]); }
     /* barrier posts with St Andrew's crosses and lamp housings (right of track 1, left of track 2) */
     for (const uu of [4.8, -9.4]) for (const f of [-1, 1]) {
       const L = this.loc(s + f * 5, uu); B.lit.add(TPL.boxB, L.x, L.ty - .4, L.z, .15, 3.4, .15, 0, 0, 0xdddddd);
@@ -1811,7 +1825,7 @@ const ZoneDecor = {
       B.lit.add(TPL.boxB, L.x, L.ty - .4, L.z, .5, .6, .5, 0, 0, [.35, .35, .36]);
     }
     /* road warning signs (red-white triangle) on both approaches */
-    for (const uu of [26, -30]) { const L = this.loc(s + (uu > 0 ? 4.6 : -4.6), uu), y = terrH(bi, uu, L.x, L.z); B.lit.add(TPL.boxB, L.x, y - .3, L.z, .07, 2.4, .07, 0, 0, 0x888888); B.lit.add(TPL.pyr, L.x, y + 2.0, L.z, .9, .8, .05, L.hd + Math.PI / 2, 0, [.85, .15, .12]); }
+    for (const uu of [26, -30]) { const L = this.loc(s + (uu > 0 ? 4.6 : -4.6), uu), y = meshH(s + (uu > 0 ? 4.6 : -4.6), uu); B.lit.add(TPL.boxB, L.x, y - .3, L.z, .07, 2.4, .07, 0, 0, 0x888888); B.lit.add(TPL.pyr, L.x, y + 2.0, L.z, .9, .8, .05, L.hd + Math.PI / 2, 0, [.85, .15, .12]); }
   },
   bridge(ch, B, z) {
     const a = Math.max(ch.s0, z.c - z.half), b = Math.min(ch.s1, z.c + z.half); if (a >= b) return;
@@ -2025,7 +2039,7 @@ const ZoneDecor = {
         Bl.add(TPL.box, C.x, O.hd - .55, C.z, 48, 1.0, 11, C.hd + Math.PI / 2, 0, CON);
         for (const sg of [-1, 1]) { const L = this.loc(O.s + sg * 5.4, BEDC); Bl.add(TPL.box, L.x, O.hd + .45, L.z, 48, 1.0, .3, L.hd + Math.PI / 2, 0, [.56, .56, .54]); Bl.add(TPL.box, L.x, O.hd + 1.25, L.z, 48, .08, .08, L.hd + Math.PI / 2, 0, [.35, .4, .45]); }
         /* piers on the cutting slopes, clear of both tracks */
-        for (const su of [-1, 1]) { const P = this.loc(O.s, BEDC + su * 9.6), y0 = terrH(bi, BEDC + su * 9.6, P.x, P.z); Bl.add(TPL.boxB, P.x, y0 - .5, P.z, 1.4, O.hd - y0 - .4, 7, P.hd, 0, CON2); Bl.add(TPL.box, P.x, O.hd - 1.2, P.z, 1.8, .5, 10, P.hd, 0, CON2); }
+        for (const su of [-1, 1]) { const P = this.loc(O.s, BEDC + su * 9.6), y0 = meshH(O.s, BEDC + su * 9.6); Bl.add(TPL.boxB, P.x, y0 - .5, P.z, 1.4, O.hd - y0 - .4, 7, P.hd, 0, CON2); Bl.add(TPL.box, P.x, O.hd - 1.2, P.z, 1.8, .5, 10, P.hd, 0, CON2); }
         for (const su of [-1, 1]) { const L = this.loc(O.s + 5.2, BEDC + su * 16); B.emis.add(TPL.box, L.x, O.hd + 5.2, L.z, .5, .15, .5, 0, 0, [1, .88, .6]); Bl.add(TPL.boxB, L.x, O.hd + .3, L.z, .14, 5, .14, 0, 0, 0x555555); B.glow.push([L.x, O.hd + 5, L.z, 3, 1, .88, .6]); }
       }
     }
@@ -2360,8 +2374,8 @@ Object.assign(ZoneDecor, {
         const r = H(kb, e * 2 + (sg > 0 ? 1 : 0), sd + 60); if (r < .1 + (sparse ? .25 : 0) + (1 - T.density) * .12) continue;
         const ua = edges[e] + ST / 2, ub = edges[e + 1] - ST / 2, uc = sg * (ua + ub) / 2;
         if (this.stnClear(z, kb * BLK, (kb + 1) * BLK, sg > 0 ? ua : -ub, sg > 0 ? ub : -ua)) continue;
-        const L = this.loc(sc, uc), y = terrH(bi, uc, L.x, L.z) - .15, near = 1 - d / half, cen = clamp(Math.pow(clamp(near, 0, 1), 1.15) * (1 - e / 6.5), 0, 1);
-        const o = { x: L.x, z: L.z, yaw: L.hd }, w = ub - ua, dp = BLK - ST;
+        const w = ub - ua, dp = BLK - ST, L = this.loc(sc, uc), y = groundMin(sc, uc, Math.min(w, dp) * .35) - .15, near = 1 - d / half, cen = clamp(Math.pow(clamp(near, 0, 1), 1.15) * (1 - e / 6.5), 0, 1);
+        const o = { x: L.x, z: L.z, yaw: L.hd };
         /* lift the frame to ground level via y offset: builders take absolute y, so shift using a temporary offset */
         Town.blockAt(Bb, Bl, Be, o, y, w, dp, S, T, { cen, kb, e, sg, sd, cf });
       }
@@ -2407,7 +2421,7 @@ Object.assign(ZoneDecor, {
           const u = ul + side * (9 + depth / 2 + rr(3 + (side > 0 ? 1 : 0)) * 2.5), sa = s + (rr(6) - .5) * 5;
           if (this.stnClear(z, sa - 12, sa + 12, u - 12, u + 12)) continue;
           if (rr(10 + side) < .12) continue;
-          const L = this.loc(sa, u), y = terrH(bi, u, L.x, L.z) - .2, k = n => H(s | 0, li * 7 + side + n, sd + 320);
+          const L = this.loc(sa, u), y = groundMin(sa, u, 7) - .2, k = n => H(s | 0, li * 7 + side + n, sd + 320);
           const kind = k(0), fl = town && (Math.abs(ul) < 60) ? (kind < .25 ? 4 : kind < .6 ? 3 : 2) : (kind < .15 ? 2 : 1);
           Town.lot(Bb, Bl, Be, { x: L.x, z: L.z, yaw: L.hd + (rr(8) - .5) * .1 }, y, w, depth + 4, S, T, k, sd, { town, fl, side: -side, dd, z });
         }
@@ -4173,7 +4187,7 @@ const Lights = {
       if (!ix.lit || n + 4 > this.pool.length) continue; const sw = ix.s, uw = ix.u; const a = {}; ptAt(sw, uw, a); if (Math.hypot(a.x - camPos.x, a.z - camPos.z) > 260) continue;
       const stS = this.state(ix, 's', t), stU = this.state(ix, 'u', t);
       for (const [ds, du, ax] of [[-8, 8, 's'], [8, -8, 's'], [8, 8, 'u'], [-8, -8, 'u']]) {
-        const e = this.pool[n++], q = {}; ptAt(sw + ds, uw + du, q); e.g.position.set(q.x, terrH(Rail.bio(sw + ds), uw + du, q.x, q.z), q.z);
+        const e = this.pool[n++], q = {}; ptAt(sw + ds, uw + du, q); e.g.position.set(q.x, meshH(sw + ds, uw + du), q.z);
         const st = ax === 's' ? stS : stU, m = this.mat[st]; e.l.material = m; e.l2.material = m; e.g.rotation.y = q.hd + (ax === 's' ? (ds < 0 ? 0 : Math.PI) : (du < 0 ? Math.PI / 2 : -Math.PI / 2)); e.g.visible = true;
       }
     }
@@ -4658,7 +4672,7 @@ const Wildlife = {
       const q = this.list[i];
       if (Math.abs(q.s - ply.s) > 700) { this.scene.remove(q.g); q.g.traverse(o => o.geometry && o.geometry.dispose()); this.list.splice(i, 1); continue; }
       q.s += Math.sin(t * .1 + q.ph) * q.sp * .6 * dt; ptAt(q.s, q.u, a);
-      q.yt -= dt; if (q.yt < 0) { q.yt = .6; q.y = terrH(Rail.bio(q.s), q.u, a.x, a.z); }
+      q.yt -= dt; if (q.yt < 0) { q.yt = .6; q.y = meshH(q.s, q.u); }
       q.g.position.set(a.x, q.y, a.z); q.g.rotation.y = a.hd + Math.sin(q.ph + t * .05) * .8 + Math.PI / 2; q.g.children[0].position.y = Math.abs(Math.sin(t * 2 + q.ph)) * .03;
     }
   }
@@ -4732,6 +4746,19 @@ class PartSys {
   dispose() { this.scene.remove(this.pts); this.geo.dispose(); this.mat.dispose(); }
 }
 
+/* far landmarks (volcano, spaceport): they take the scene fog fully at ground level, so their foot melts into the hazy ground
+   like the terrain around them, and only partly higher up (keep = share of the fog kept at the top), so they stay visible
+   kilometres away without looking pasted onto the sky */
+function farFog(mat, ground, rise, keep) {
+  mat.fog = true; const U = { uGround: { value: ground }, uRise: { value: rise }, uKeep: { value: keep } }; mat.userData.far = U;
+  mat.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, U);
+    sh.vertexShader = sh.vertexShader.replace('void main() {', 'varying float vWY;\nvoid main() {').replace('#include <fog_vertex>', '#include <fog_vertex>\n  vWY = (modelMatrix * vec4(transformed, 1.0)).y;');
+    sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'uniform float uGround, uRise, uKeep;\nvarying float vWY;\nvoid main() {').replace('#include <fog_fragment>',
+      '#ifdef USE_FOG\n#ifdef FOG_EXP2\n  float fogFactor = 1.0 - exp(-fogDensity * fogDensity * fogDepth * fogDepth);\n#else\n  float fogFactor = smoothstep(fogNear, fogFar, fogDepth);\n#endif\n  fogFactor *= mix(1.0, uKeep, smoothstep(uGround, uGround + uRise, vWY));\n  gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor);\n#endif');
+  };
+  return mat;
+}
 /* hazy colour for distant sky objects (they ignore scene fog so they stay visible far away) */
 const Haze = {
   col(c, k) { const f = Env.fogCol; return [c[0] + (f.r - c[0]) * k, c[1] + (f.g - c[1]) * k, c[2] + (f.b - c[2]) * k]; }
@@ -4833,22 +4860,33 @@ const Volcano = {
   makeCone(h, rb, snow, E) {
     E = E || 0; const H2 = h + E, g = new THREE.CylinderGeometry(rb * .09, rb + rb * .91 * E / h, H2, 22, 9, true), p = g.attributes.position, col = new Float32Array(p.count * 3);
     for (let i = 0; i < p.count; i++) { const y = (p.getY(i) + H2 / 2 - E) / h, n = .85 + .15 * Math.sin(i * 12.9898), c = y < 0 ? [.13, .19, .13] : y < .22 ? [.16, .26, .14] : y < .62 ? [.34, .3, .27] : y < .84 ? (snow ? [.88, .9, .94] : [.28, .25, .24]) : [.2, .17, .16]; col[i * 3] = c[0] * n; col[i * 3 + 1] = c[1] * n; col[i * 3 + 2] = c[2] * n; }
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3)); return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide }));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3)); return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
   },
+  /* lowest rendered ground under the cone's foot: the cone stands on (and continues into) the real terrain */
+  ground(s, u, rb) { let lo = meshH(s, u); for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; for (const f of [.45, .8]) lo = Math.min(lo, meshH(s + Math.cos(a) * rb * f, u + Math.sin(a) * rb * f)); } return lo; },
   region(r) {
     let v = this.list.get(r); if (v !== undefined) return v; const sd = Rail.seed;
     if (H(sd, r, 300) > .4) { this.list.set(r, null); return null; }
     const s = r * 24000 + (.2 + H(sd, r, 301) * .6) * 24000, side = H(sd, r, 302) < .5 ? -1 : 1, u = side * (1650 + H(sd, r, 303) * 700), h = 460 + H(sd, r, 304) * 240, rb = 1000 + H(sd, r, 305) * 300;
-    const a = {}; ptAt(s, u, a); const base = Rail.ty(s) - 30, E = 220, g = new THREE.Group(), cone = this.makeCone(h, rb, H(sd, r, 306) < .5, E);
-    cone.position.y = base - E + (h + E) / 2; g.add(cone);
+    const a = {}; ptAt(s, u, a); const base = this.ground(s, u, rb) - 4, E = 220, g = new THREE.Group(), cone = this.makeCone(h, rb, H(sd, r, 306) < .5, E);
+    farFog(cone.material, base, h * .35, .5); cone.position.y = base - E + (h + E) / 2; g.add(cone);
     const glow = new THREE.Mesh(new THREE.CircleGeometry(rb * .11, 12), new THREE.MeshBasicMaterial({ color: 0xff5a1a, fog: false })); glow.rotation.x = -Math.PI / 2; glow.position.y = base + h + .5; glow.visible = false; g.add(glow);
     g.position.set(a.x, 0, a.z); g.visible = false; this.scene.add(g);
-    v = { r, s, u, x: a.x, z: a.z, top: base + h, g, cone, glow, h, rb, base, er: 0 }; this.list.set(r, v); return v;
+    v = { r, s, u, x: a.x, z: a.z, top: base + h, g, cone, glow, h, rb, base, er: 0, show: 0 }; this.list.set(r, v); return v;
   },
   nearest(s) { let best = null, bd = 1e9; for (let r = Math.floor(s / 24000) - 1; r <= Math.floor(s / 24000) + 1; r++) { const v = this.region(r); if (!v) continue; const d = Math.abs(v.s - s); if (d < bd) { bd = d; best = v; } } return best; },
   update(dt, G, camObj, rend) {
     const cam = camObj.position, s = G.phys.s, k = Math.floor(s / 24000);
-    for (let r = k - 1; r <= k + 1; r++) { const v = this.region(r); if (!v) continue; const d = Math.hypot(v.x - cam.x, v.z - cam.z); v.g.visible = d < 6300; v.dist = d; const day = .3 + .7 * Env.day; v.cone.material.color.setRGB(day, day * .98, day * 1.04); }
+    /* the cone fades into the haze towards 6.3 km instead of popping; an erupting volcano stays in view as long as its ash
+       column does, projected onto the same 5.3 km sphere as the smoke particles so the column always rises from its crater */
+    const PR = 5300;
+    for (let r = k - 1; r <= k + 1; r++) { const v = this.region(r); if (!v) continue; const d = Math.hypot(v.x - cam.x, v.z - cam.z); v.dist = d;
+      const act = this.erupting && this.erupting.v === v; v.show = act ? 1 : Math.max(0, v.show - dt / 20);
+      const keep = lerp(lerp(.5, 1, sm(4800, 6300, d)), .5, v.show); v.g.visible = keep < .995;
+      const day = .3 + .7 * Env.day; v.cone.material.color.setRGB(day, day * .98, day * 1.04);
+      const q = d > PR ? PR / d : 1, U = v.cone.material.userData.far;
+      v.g.scale.setScalar(q); v.g.position.set(cam.x + (v.x - cam.x) * q, cam.y + (0 - cam.y) * q, cam.z + (v.z - cam.z) * q);
+      if (U) { U.uGround.value = cam.y + (v.base - cam.y) * q; U.uRise.value = v.h * .35 * q; U.uKeep.value = keep; } }
     for (const [r, v] of this.list) if (Math.abs(r - k) > 3 && !(this.erupting && this.erupting.v === v)) { if (v) { this.scene.remove(v.g); disposeTree(v.g); } this.list.delete(r); }
     const E = this.erupting;
     if (E) {
@@ -4871,16 +4909,26 @@ const Spaceport = {
   region(r) {
     let v = this.list.get(r); if (v !== undefined) return v; const sd = Rail.seed;
     if (H(sd, r, 310) > .3) { this.list.set(r, null); return null; }
-    const s = r * 30000 + (.25 + H(sd, r, 311) * .5) * 30000, side = H(sd, r, 312) < .5 ? -1 : 1, u = side * (1500 + H(sd, r, 313) * 500);
-    const a = {}; ptAt(s, u, a); const y = Rail.ty(s) - 12, g = new THREE.Group(), b = new Builder(), C = [.7, .72, .76];
+    /* the site goes to the flattest of several candidate places in the region (it needs level ground about 1 km across);
+       no site at all where the ground is hilly or wet, rather than a site on stilts or on a giant plinth */
+    const side = H(sd, r, 312) < .5 ? -1 : 1; let s = 0, u = 0, lo = 0, hi = 0, best = 1e9;
+    for (let c = 0; c < 6; c++) { const cs = r * 30000 + (.2 + .12 * c + H(sd, r, 311 + c) * .05) * 30000, cu = side * (1500 + H(sd, r, 313 + c) * 600); let l = 1e9, h2 = -1e9;
+      for (let k = 0; k < 16; k++) { const an = k / 16 * Math.PI * 2; for (const f of [0, .5, 1]) { const h = meshH(cs + Math.cos(an) * 470 * f, cu + Math.sin(an) * 470 * f); l = Math.min(l, h); h2 = Math.max(h2, h); } }
+      if (l > 1 && h2 - l < best) { best = h2 - l; s = cs; u = cu; lo = l; hi = h2; } }
+    if (best > 9) { this.list.set(r, null); return null; }
+    const a = {}; ptAt(s, u, a);
+    const y = hi + .3, g = new THREE.Group(), b = new Builder(), C = [.7, .72, .76];
     b.add(TPL.cyl, 0, 0, 0, 190, 1.2, 190, 0, 0, [.26, .26, .28]); b.add(TPL.cyl, 0, 0, 0, 360, .8, 360, 0, 0, [.2, .3, .18]);
     for (const sg of [-1, 1]) { b.aabb(sg * 22 - 2, sg * 22 + 2, 0, 120, -3, 3, [.7, .15, .1]); }
     b.aabb(-22, 22, 112, 118, -3, 3, [.7, .15, .1]); b.aabb(-22, 22, 60, 62, -3, 3, [.7, .15, .1]);
     b.aabb(-60, 60, 0, 42, 260, 340, [.88, .9, .92]); b.aabb(-60, 60, 42, 46, 260, 340, [.3, .34, .4]); b.aabb(-30, 30, 0, 24, 380, 440, [.8, .82, .85]);
     b.add(TPL.cyl, 150, 0, -60, 6, 45, 6, 0, 0, [.8, .8, .82]);
-    const mesh = b.build(new THREE.MeshLambertMaterial({ vertexColors: true, fog: false }), false); g.add(mesh);
+    const mesh = b.build(farFog(new THREE.MeshLambertMaterial({ vertexColors: true }), y, 70, .45), false); g.add(mesh);
+    /* levelled site: a low grass earthwork with gentle 1:5 sides down into the ground, so no edge of it hangs in the air */
+    const tc = terrColor(Rail.bio(s), u, a.x, a.z, y).slice(), ph = y - lo + 2, plat = new THREE.Mesh(new THREE.CylinderGeometry(480, 480 + ph * 5, ph, 48, 1, false), farFog(new THREE.MeshLambertMaterial({ color: new THREE.Color(tc[0], tc[1], tc[2]) }), lo, ph + 10, .45));
+    plat.position.y = -ph / 2 - .05; g.add(plat);
     const rk = new THREE.Group(), rb = new Builder(); rb.add(TPL.cyl, 0, 0, 0, 9, 58, 9, 0, 0, [.95, .95, .97]); rb.add(TPL.cone, 0, 58, 0, 9, 14, 9, 0, 0, [.95, .95, .97]); rb.aabb(-.4, .4, 8, 46, -4.6, -4.4, [.1, .1, .12]); rb.add(TPL.cyl, 0, 30, 0, 9.05, 5, 9.05, 0, 0, [.12, .12, .14]);
-    rk.add(rb.build(new THREE.MeshLambertMaterial({ vertexColors: true, fog: false }), false)); rk.position.set(a.x, y + 1.2, a.z); this.scene.add(rk);
+    rk.add(rb.build(farFog(new THREE.MeshLambertMaterial({ vertexColors: true }), y, 70, .45), false)); rk.position.set(a.x, y + 1.2, a.z); this.scene.add(rk);
     const flame = new THREE.Mesh(new THREE.ConeGeometry(4.5, 40, 8), new THREE.MeshBasicMaterial({ color: 0xffb040, fog: false, transparent: true, opacity: .9 })); flame.rotation.x = Math.PI; flame.position.y = -19; flame.visible = false; rk.add(flame);
     g.position.set(a.x, y, a.z); g.rotation.y = a.hd; g.visible = false; this.scene.add(g);
     v = { r, s, u, x: a.x, z: a.z, y, g, rk, flame, ready: true, dist: 1e9 }; this.list.set(r, v); return v;
@@ -4925,7 +4973,7 @@ const Events = {
   init(scene) { this.scene = scene; this.ps.smoke = new PartSys(scene, 1400, false); this.ps.fire = new PartSys(scene, 900, true); this.ps.spark = new PartSys(scene, 900, true); this.ps.dust = new PartSys(scene, 900, false); },
   reset() { for (const E of this.active.slice()) this.stop(E, true); this.active.length = 0; this.cd.clear(); this.timer = 40; this.sinceRare = 1e9; this.lastId = ''; this.rainMem = 0; for (const k in this.ps) this.ps[k].clear(); Env.dust = 0; Env.quake = 0; Env.windB = 0; EventLog.reset(); },
   /* helpers used by event definitions */
-  P(sOff, u, c) { const s = c.s + c.dir * sOff, o = {}; ptAt(s, u, o); o.s = s; o.gy = terrH(Rail.bio(s), u, o.x, o.z); return o; },
+  P(sOff, u, c) { const s = c.s + c.dir * sOff, o = {}; ptAt(s, u, o); o.s = s; o.gy = meshH(s, u); return o; },
   add(E, o) { this.scene.add(o); E.objs.push(o); return o; },
   zoneBad(s) { const k = Rail.zoneAt(s).kind; return k === 'bridge' || k === 'tunnel' || k === 'station'; },
   ctxNow(G) { const p = G.phys, b = G.bio || Rail.bio(p.s); return { p, G, bio: b, s: p.s, dir: p.dir, night: Env.night, day: Env.day, cam: camera.position, v: p.v, wx: Weather.key }; },
@@ -4980,7 +5028,7 @@ function slideStart(E, c, n, kind) {
   const s0 = c.s + c.dir * off, bi = Rail.bio(s0);
   for (let i = 0; i < n; i++) {
     const ds = (Math.random() - .5) * 40, so = s0 + ds, a0 = {}, a1 = {}; ptAt(so, u0 + Math.random() * 12, a0); ptAt(so + (Math.random() - .5) * 8, side * (8 + Math.random() * 12), a1);
-    const y0 = terrH(Rail.bio(so), u0, a0.x, a0.z) + 6, y1 = terrH(Rail.bio(so), side * 10, a1.x, a1.z);
+    const y0 = meshH(so, u0) + 6, y1 = meshH(so, side * 10);
     rocks.push({ m: g.children[i], x0: a0.x, z0: a0.z, y0, x1: a1.x, z1: a1.z, y1, d: Math.random() * 3.5, T: 5 + Math.random() * 3.5, r: .8 + Math.random() }); g.children[i].visible = false;
   }
   E.data = { rocks, side, s0, kind }; const a = {}; ptAt(s0, side * 50, a); E.data.x = a.x; E.data.z = a.z; E.data.y = terrH(bi, side * 50, a.x, a.z) + 8;
@@ -5315,7 +5363,7 @@ const CamMgr = {
     bd = d2(best);
     for (let st = 96; st >= 1.5; st /= 2) for (let k = -3; k <= 3; k++) { if (!k) continue; const ss = best + k * st, d = d2(ss); if (d < bd) { bd = d; best = ss; } }
     G0.s = best; Rail.pose(best, p); const c = Math.cos(p.hd), sn = Math.sin(p.hd), u = -(x - p.x) * c + (z - p.z) * sn, b = Rail.bio(best);
-    return { s: best, u, ty: p.y, h: terrH(b, u, x, z), tin: b.tin, tun: b.tun };
+    return { s: best, u, ty: p.y, h: meshH(best, u), tin: b.tin, tun: b.tun };
   },
   /* keep external cameras above the ground (never under the map) and out of mountains: either inside the tunnel tube or above the mountain */
   clampCam(p, S, above) {
@@ -6002,7 +6050,7 @@ function startGame(o) {
       Object.assign(p, { v: 0, thrT: 0, throttle: 0, brake: 0, emerg: false, p: 5, acc: 0, dist: 0 });
       G.thrT = G.brkT = 0; G.lights = false; G.wipers = false; G.cruise = false; G.paused = false; G.t = 0; Stations.jt = 0; Stations.served = 0; G.revT = 0; G.fadeRev = 0; G.freezeTime = false; Challenge.reset();
       if (save) {
-        p.s = save.s; p.dir = save.dir; p.v = save.v || 0; G.thrT = save.thr || 0; G.brkT = save.brk || 0; G.lights = !!save.lights; G.wipers = !!save.wipers; Env.clock = save.clock; p.dist = save.dist || 0; Stations.jt = save.jt || 0; Stations.served = save.served || 0; G.cabinLight = save.cabin !== false; Weather.force(save.wx || 'clear'); p.throttle = G.thrT; p.brake = G.brkT;
+        p.s = save.s; p.dir = save.dir; p.v = save.v || 0; G.thrT = save.thr || 0; G.brkT = save.brk || 0; G.lights = !!save.lights; G.wipers = !!save.wipers; Env.clock = isFinite(save.clock) ? save.clock : 8.3; p.dist = save.dist || 0; Stations.jt = save.jt || 0; Stations.served = save.served || 0; G.cabinLight = save.cabin !== false; Weather.force(save.wx || 'clear'); p.throttle = G.thrT; p.brake = G.brkT;
         if (save.ch) { Challenge.n = save.ch.n || 0; Challenge.score = save.ch.score || 0; }
       } else { const z = Rail.zone(0); p.dir = 1; p.s = z.c + G.train.length / 2; Env.clock = 8.3; Weather.force(SettingsManager.v.weather !== 'auto' ? SettingsManager.v.weather : 'clear'); Stations.state = 'wait'; G.cabinLight = true; }
       Weather.lock = SettingsManager.v.weather;
