@@ -350,3 +350,32 @@ Device in the screenshots: about 834×375 CSS px landscape. All checks below wer
   * Regression: UI scenarios at 834×375 and 390×844 (no overlaps), dialogs, continue/save, pause in menus (train
     stops, sound off), menu scroll, photo-mode translations in 9 languages, driver lessons, desktop/phone/landscape.
 * Not checked: a real phone (GPU fill rate of the far layer and the dither on a mobile GPU).
+
+## Update 18 Nov 2026 (8): the main theme is the default music
+* The "Endless Rails" trailer theme (96 BPM, C minor, 30-bar loop of 75 s, fully synthesized with Web Audio, no audio
+  files) is now the game's music by default:
+  * it starts on the first tap in the main menu (browsers allow sound only after a gesture) and carries on into the
+    journey without restarting; it keeps playing in menus and pause like the music did before;
+  * it loops; the "next track" button still plays the four older tracks, and after one of them (2.5–4.5 min) the theme
+    comes back; with music switched off nothing is scheduled; switching it on starts the theme again;
+  * trailer impacts/risers stay off (calmer for driving); level: about the same as the train sound at 108 km/h with the
+    default volumes (music bus −29 dB, train −28…−29 dB).
+* Adaptations for phones (the melody, chords, rhythm and arrangement are unchanged):
+  * oscillators that always sound together at the same pitch are merged into one oscillator with the summed spectrum
+    (pluck = 0.6 saw + 0.4 sine, bass = sine + octave + a little saw); all voices of a pad chord share one envelope;
+    bell partials stop when they are ~48 dB down instead of ~61 dB. Spectrum per instrument and per section matches the
+    original within about 1 dB.
+  * Audio-thread cost in the densest part (climax): from 2.9× to 3.5–4.0× faster than real time (offline render in
+    Chromium on a 2.3 GHz Xeon core); the opening sections 1.6×.
+  * Low graphics tier (weak devices): lighter arrangement — no string layer, no quiet octave doublings, two pad voices
+    instead of three, shorter reverb, three delay taps instead of five: climax 5.9–7.1× real time, same loudness.
+  * The notes of a bar are created in six parts on successive 100 ms timer ticks, 1.6 s ahead: the longest main-thread
+    task is 2.6 ms (bar 22 drum fill), typically 0.3 ms, instead of up to 5 ms for a whole bar. A bar whose time already
+    passed (main thread stalled) is skipped instead of firing all its notes at once.
+* Check:
+  * Menu: no sound before the first tap, theme after it; journey start: the same theme continues (bar 6 → 7).
+  * Music off: 0 voices left; on: theme from the start; next track → "Midnight Synth"; after its time → theme again.
+  * 3.5 minutes of driving (almost three loops): 53–121 live voices depending on the section, queue empty, JS heap flat
+    at 51 MB.
+  * Regression: pause in menus, UI scenarios at 834×375 and 390×844, dialogs, continue, desktop journey.
+* Not checked: the sound on a real phone (only the offline render and the browser's audio clock were measured).
