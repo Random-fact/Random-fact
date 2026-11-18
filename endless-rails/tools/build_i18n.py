@@ -25,3 +25,10 @@ assert m and json.loads(m.group(1).replace("'", '"')) == ORDER, 'LORD order in g
 open(html_p, 'w', encoding='utf-8').write(html2)
 done = {c: sum(1 for k in src if tr[c].get(k)) for c in ORDER}
 print('I18N merged:', len(src), 'strings;', ', '.join(f'{c} {done[c]}' for c in ORDER))
+
+# every UI text in the page must be in the catalogue: data-t / data-tt attributes and literal _T('...') calls
+body = re.sub(r'const I18N = /\*@I18N@\*/.*?;\n', '', html2, count=1, flags=re.S)
+used = set(re.findall(r'data-tt?="([^"]+)"', body)) | set(re.findall(r"_T\('((?:[^'\\]|\\.)+)'", body))
+missing = sorted(k for k in used if re.search('[А-Яа-яІіЇїЄєҐґ]', k) and k not in set(src))
+if missing:
+    print('NOT IN CATALOGUE (add to i18n/source_uk.json and every <lang>.json):'); [print('  ' + k) for k in missing]; sys.exit(1)

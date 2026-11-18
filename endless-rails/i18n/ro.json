@@ -594,5 +594,8 @@
 "НАЛАШТУВАННЯ": "SETĂRI",
 "Гра зберігається автоматично. Клавіші: ↑↓ тяга, Пробіл гальмо, X екстрено, H сигнал, L фари, K двірники, C камера, 1–9 і 0 камери (0 — карта), V сховати HUD, P пауза, M музика, G круїз-контроль, J стрілка, R скинути камеру, Esc меню.": "Jocul se salvează automat. Taste: ↑↓ tracțiune, Spațiu frână, X urgență, H claxon, L faruri, K ștergătoare, C cameră, 1–9 și 0 camere (0 — hartă), V ascundere HUD, P pauză, M muzică, G pilot automat, J macaz, R resetare cameră, Esc meniu.",
 "Симулятор залізничних подорожей": "Simulator de călătorii cu trenul",
-"Повернути меню": "Arată meniul"
+"Повернути меню": "Arată meniul",
+"Час доби": "Ora zilei",
+"Сховати панель": "Ascunde panoul",
+"Вийти": "Ieșire"
 }

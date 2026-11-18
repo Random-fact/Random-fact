@@ -594,5 +594,8 @@
 "НАЛАШТУВАННЯ": "CONFIGURAÇÕES",
 "Гра зберігається автоматично. Клавіші: ↑↓ тяга, Пробіл гальмо, X екстрено, H сигнал, L фари, K двірники, C камера, 1–9 і 0 камери (0 — карта), V сховати HUD, P пауза, M музика, G круїз-контроль, J стрілка, R скинути камеру, Esc меню.": "O jogo é salvo automaticamente. Teclas: ↑↓ tração, Espaço freio, X emergência, H buzina, L faróis, K limpadores, C câmera, 1–9 e 0 câmeras (0 — mapa), V ocultar HUD, P pausa, M música, G controle de cruzeiro, J desvio, R redefinir câmera, Esc menu.",
 "Симулятор залізничних подорожей": "Simulador de viagens de trem",
-"Повернути меню": "Mostrar menu"
+"Повернути меню": "Mostrar menu",
+"Час доби": "Hora do dia",
+"Сховати панель": "Ocultar painel",
+"Вийти": "Sair"
 }

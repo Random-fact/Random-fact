@@ -11,7 +11,7 @@ Date: 16 Nov 2026 · Source: `endless-rails/src/game.html` (single self-containe
 * Ads were exercised only through a **mock of the Android bridge inside the test harness**. The game never simulates an ad or a
   reward on its own: without the native SDK, `Ads.enabled()` is false and all extras are simply free.
 * Translations (9 languages) were produced by AI translators working from a glossary and were checked automatically
-  (all 596 keys, placeholders, no Cyrillic left on any screen). **A native-speaker review is recommended** before release.
+  (all 599 keys, placeholders, no Cyrillic left on any screen). **A native-speaker review is recommended** before release.
 
 ## Bugs found and fixed in this update
 | # | Problem | Root cause → fix |
@@ -181,3 +181,11 @@ Device in the screenshots: about 834×375 CSS px landscape. All checks below wer
 | Full scenarios at 834×375, 390×844, 1180×820 (cabs, levers, rain in cab and outside, every menu, events, photo hide/restore) | **Pass** |
 | Regression (desktop, phone portrait, phone landscape journeys), dialogs at 3 sizes | **Pass**, no page errors |
 | Test APK rebuilt; its inlined page offline | **Pass**: 0 network requests, 0 errors |
+
+## Update 18 Nov 2026: photo-mode translations
+* Three photo-panel texts (“Time of day”, “Hide panel”, “Exit”) were missing from the translation catalogue, so they stayed
+  in Ukrainian in every language. They are now translated into all 9 languages (catalogue: 599 strings).
+* `tools/build_i18n.py` now scans the page for every `data-t` / `data-tt` text and literal `_T('…')` call and stops with a
+  list when one is not in the catalogue, so this cannot slip through again.
+* Check: photo mode opened in en, ru, zh, ro, pt, es, fr, de, ja, with the panel shown and hidden. A scan of all visible text,
+  titles and the weather list finds no Ukrainian text left (Russian shows Russian).

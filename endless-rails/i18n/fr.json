@@ -594,5 +594,8 @@
 "НАЛАШТУВАННЯ": "PARAMÈTRES",
 "Гра зберігається автоматично. Клавіші: ↑↓ тяга, Пробіл гальмо, X екстрено, H сигнал, L фари, K двірники, C камера, 1–9 і 0 камери (0 — карта), V сховати HUD, P пауза, M музика, G круїз-контроль, J стрілка, R скинути камеру, Esc меню.": "La partie est sauvegardée automatiquement. Touches : ↑↓ traction, Espace frein, X urgence, H klaxon, L phares, K essuie-glaces, C caméra, 1–9 et 0 caméras (0 — carte), V masquer le HUD, P pause, M musique, G régulateur de vitesse, J aiguillage, R réinitialiser la caméra, Échap menu.",
 "Симулятор залізничних подорожей": "Simulateur de voyages ferroviaires",
-"Повернути меню": "Afficher l’interface"
+"Повернути меню": "Afficher l’interface",
+"Час доби": "Heure de la journée",
+"Сховати панель": "Masquer le panneau",
+"Вийти": "Quitter"
 }

@@ -594,5 +594,8 @@
 "НАЛАШТУВАННЯ": "EINSTELLUNGEN",
 "Гра зберігається автоматично. Клавіші: ↑↓ тяга, Пробіл гальмо, X екстрено, H сигнал, L фари, K двірники, C камера, 1–9 і 0 камери (0 — карта), V сховати HUD, P пауза, M музика, G круїз-контроль, J стрілка, R скинути камеру, Esc меню.": "Das Spiel wird automatisch gespeichert. Tasten: ↑↓ Zugkraft, Leertaste Bremse, X Notbremse, H Horn, L Licht, K Wischer, C Kamera, 1–9 und 0 Kameras (0 — Karte), V HUD ausblenden, P Pause, M Musik, G Tempomat, J Weiche, R Kamera zurücksetzen, Esc Menü.",
 "Симулятор залізничних подорожей": "Eisenbahn-Reisesimulator",
-"Повернути меню": "Menü einblenden"
+"Повернути меню": "Menü einblenden",
+"Час доби": "Tageszeit",
+"Сховати панель": "Panel ausblenden",
+"Вийти": "Beenden"
 }
