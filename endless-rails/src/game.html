@@ -932,6 +932,109 @@ const Biome = {
   }
 };
 
+/* ===== Rivers =====
+   Every river is one long winding channel. It crosses the line under the bridge of its zone and goes on to both sides
+   through the whole land, the far landscape included, so it has no visible start or end. In line coordinates its
+   centre is s = z.c + f(u): f(0) = 0 (the bridge), meanders grow with the distance from the line (up to ~700 m) and
+   never reach the towns near the line. Width varies along the course; wide rivers turn into bays further out.
+   The banks are shallow on low land and form a valley (gorge in high land) where the ground is higher. Chunks and the
+   far landscape evaluate the same functions, so the river continues seamlessly between them. */
+const Rivers = {
+  f(z, u) { const sd = Rail.seed + z.zi * 13, au = Math.abs(u), o = u < 0 ? 37.7 : 0, A = 4 + .3 * Math.min(au, 2800);
+    const n = (L, k, wt) => (vn1(au / L + k + o, sd + k) - vn1(k + o, sd + k)) * wt;   /* three scales of bends: long sweeps, meanders, small kinks */
+    return A * (n(760, 3.1, .55) + n(300, 1.7, .38) + n(120, 5.9, .12)); },
+  w(z, u) { const sd = Rail.seed + z.zi * 13, au = Math.abs(u), o = u < 0 ? 11.3 : 0, v = vn1(au / 900 + 5.3 + o, sd + 2);
+    let w = z.riverHalf * lerp(1, .6 + .8 * v, sm(120, 700, au)); if (z.riverHalf > 250) w *= 1 + .9 * sm(300, 3200, au) * vn1(au / 1500 + o, sd + 3); return w; },
+  /* 0 = dry land, 1 = river bed; h: the ground before the river */
+  dip(b, u, h) {
+    const zi = b.z.zi; let best = 0;
+    for (let k = zi - 1; k <= zi + 1; k++) {
+      const z = k === zi ? b.z : Rail.zone(k); if (z.kind !== 'bridge') continue;
+      const fz = this.f(z, u), d0 = Math.abs(b.s - z.c - fz); if (d0 > 2600) continue;
+      const df = (this.f(z, u + 6) - this.f(z, u - 6)) / 12, d = d0 / Math.sqrt(1 + df * df), wh = this.w(z, u), bank = 45 + .7 * Math.max(0, h);
+      const v = 1 - sm(0, bank, d - wh); if (v > best) best = v;
+    }
+    return best;
+  },
+  /* the river of zone z near a point: centre s and half-width (for roads, bridges and banks) */
+  at(z, u) { return { s: z.c + this.f(z, u), w: this.w(z, u) }; }
+};
+/* ===== Road network =====
+   Every road that leaves the line (level crossing, underpass, overbridge, the road along a river, the roads out of
+   villages and industrial areas) is part of one network: straight for its first 60 m (crossing, bridge, cutting), then
+   it winds with the land (tighter bends, almost serpentines, in the mountains), crosses rivers on road bridges and runs
+   on for 3.3 km to the edge of the detailed land, into the haze. Along it lie its destinations: a farm, sawmill or
+   harbour a few hundred metres out and a hamlet or village 1.3–2.8 km away. The road along a river follows its bank.
+   The road's course is a function of the lateral offset u, so chunks, trees and traffic all see the same road. */
+const Roads = {
+  U1: 3300,
+  off(R, u) {
+    if (R.riv) { const z = R.riv.z; return Rivers.f(z, u) + R.riv.side * (Rivers.w(z, u) + 46) - (R.s0 - z.c); }
+    const au = Math.abs(u), a0 = Math.abs(R.u0) + 60; if (au <= a0) return 0;
+    const sd = R.seed + (u < 0 ? 31 : 0), L = R.mtn ? 210 : 560, d = au - a0, n = (L2, k, wt) => (vn1(d / L2 + k, sd + k) - vn1(k, sd + k)) * wt;
+    return sm(0, 200, d) * Math.min(560, .32 * d) * (R.mtn ? 1.25 : 1) * (n(L, 2.3, .8) + n(L * .38, 4.1, .38));
+  },
+  mk(z, s0, kind, u0, o) { return Object.assign({ z, s0, kind, u0: u0 || 0, seed: Math.floor(H(z.zi, Math.round(s0), 700) * 9e5), mtn: Rail.bio(s0).mount > .45 }, o); },
+  /* the roads of a zone (memoised); city streets are a separate grid */
+  list(z) {
+    if (z.roadsL) return z.roadsL; const L = [], city = z.kind === 'city' || (z.kind === 'station' && z.sk === 'city'), g = Rail.grade(z);
+    if (!city) for (const s of Rail.xings(z)) L.push(this.mk(z, s, 'x'));
+    for (const U of g.under) L.push(this.mk(z, U.s, 'u')); for (const O of g.over) L.push(this.mk(z, O.s, 'o'));
+    if (g.river) L.push(this.mk(z, g.river.s, 'r', 0, { riv: { z, side: Math.sign(g.river.s - z.c) } }));
+    const vill = z.kind === 'village' || (z.kind === 'station' && (z.sk === 'village' || z.sk === 'town'));
+    if (vill) { const T = Rail.town(z), town = z.sk === 'town' || T.pop > 4000; for (const se of [z.c - z.half - 20, z.c + z.half + 20]) for (const ul of (town ? [-80, 80] : [-30, 30])) L.push(this.mk(z, se, 'e', ul)); }
+    if (z.kind === 'industrial') for (const se of [Math.ceil((z.c - z.half + 20) / 52) * 52, Math.ceil((z.c + z.half - 20) / 52) * 52]) for (const ul of [-30, 30]) L.push(this.mk(z, se, 'e', ul));
+    z.roadsL = L; return L;
+  },
+  find(z, s0, kind) { return this.list(z).find(R => Math.abs(R.s0 - s0) < .5 && (!kind || R.kind === kind)); },
+  sides(R) { return R.kind === 'e' ? [Math.sign(R.u0)] : [-1, 1]; },
+  /* is (s, u) on (or within r of) the winding part of a road? (trees, rocks and lots keep off it) */
+  near(s, u, r) {
+    const zi = Rail.zoneAt(s).zi, au = Math.abs(u);
+    for (let k = zi - 1; k <= zi + 1; k++) for (const R of this.list(Rail.zone(k))) {
+      if (au < Math.abs(R.u0) + 50 || au > this.U1 + 20 || (R.kind === 'e' && Math.sign(u) !== Math.sign(R.u0))) continue;
+      if (Math.abs(s - R.s0 - this.off(R, u)) < r) return true;
+    }
+    return false;
+  },
+  /* height of the road surface: on the ground, or on a road bridge 1.7 m above the water */
+  y(s, u) { const g = meshH(s, u); return (g < .6 ? 1.7 : g) + .07; },
+  /* the winding part of road R and what lies along it; built by the chunk that holds the road's start */
+  build(ch, B, R, D) {
+    if (R.s0 < ch.s0 || R.s0 >= ch.s1) return;
+    const Bl = B.lit, w = R.kind === 'e' ? 3.2 : 3.6, a0 = Math.abs(R.u0) + 60, St = 12, r = k => H(R.seed, k, Rail.seed + 710);
+    for (const sg of this.sides(R)) {
+      /* level of detail by distance from the line: 12 m segments near it, 24 m and 40 m further out; centre line and shoulders only where they can be seen */
+      const P = []; for (let au = a0; au <= this.U1; au += au < 700 ? St : au < 1800 ? 24 : 40) { const u = sg * au; P.push([R.s0 + this.off(R, u), u]); }
+      const N = P.map((p, i) => { const a = P[Math.max(0, i - 1)], b = P[Math.min(P.length - 1, i + 1)], ds = b[0] - a[0], du = b[1] - a[1], l = Math.hypot(ds, du) || 1; return [du / l, -ds / l]; });
+      const pt = (i, f, dy) => { const s = P[i][0] + N[i][0] * f, u = P[i][1] + N[i][1] * f, L = D.loc(s, u); return [L.x, this.y(s, u) + (dy || 0), L.z]; };
+      for (let i = 0; i < P.length - 1; i++) {
+        Bl.quad(pt(i, -w), pt(i, w), pt(i + 1, w), pt(i + 1, -w), [.17, .17, .18], true);
+        const au = Math.abs(P[i][1]); if (i % 2 && au < 700) Bl.quad(pt(i, -.1, .02), pt(i, .1, .02), pt(i + 1, .1, .02), pt(i + 1, -.1, .02), [.85, .82, .6], true);
+        if (au < 1400) for (const e of [-1, 1]) Bl.quad(pt(i, e * w, -.03), pt(i, e * (w + 1.3), -.05), pt(i + 1, e * (w + 1.3), -.05), pt(i + 1, e * w, -.03), [.36, .34, .3], true);
+        /* road bridge over water: piers and railings */
+        const g = meshH(P[i][0], P[i][1]); if (g < .6) { for (const e of [-1, 1]) { const a = pt(i, e * (w + .3), .55), b = pt(i + 1, e * (w + .3), .55); Bl.add(TPL.box, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2, .12, .12, Math.hypot(b[0] - a[0], b[2] - a[2]) + .1, Math.atan2(b[0] - a[0], b[2] - a[2]), 0, [.62, .62, .6]); }
+          if (i % 2 === 0) { const c = pt(i, 0); Bl.add(TPL.boxB, c[0], -6, c[2], 1.2, c[1] - .4 + 6, 6.4, Math.atan2(N[i][0], N[i][1]), 0, [.6, .6, .58]); } }
+      }
+      if (R.riv) continue;
+      /* a farm (sawmill, harbour…) beside the road a few hundred metres out */
+      if (r(sg + 3) < .7) { const au = a0 + 220 + r(sg + 5) * 480, u = sg * au, s = R.s0 + this.off(R, u) + (r(sg + 7) < .5 ? -1 : 1) * 46; if (meshH(s, u) > .8) D.dest(ch, B, s, u, sg, R.z); }
+      /* a hamlet or village 1.3–2.8 km out, its houses facing the road on both sides */
+      if (r(sg + 11) < .85) {
+        const au0 = 1300 + r(sg + 13) * 1500, n = 6 + Math.floor(r(sg + 17) * 8), roof = [[.5, .22, .17], [.35, .3, .3], [.45, .32, .2], [.25, .3, .38]][Math.floor(r(sg + 19) * 4)];
+        for (let j = 0; j < n; j++) {
+          const au = au0 + (j - n / 2) * 24, u = sg * au, sR = R.s0 + this.off(R, u), side = j % 2 ? 1 : -1, so = sR + side * (15 + r(j + 40) * 7);
+          if (meshH(so, u) < 1) continue; const L = D.loc(so, u), y = groundMin(so, u, 5) - .2, hw = 6 + r(j + 60) * 3, hd = 7 + r(j + 70) * 4, hh = 3.4 + (r(j + 80) < .3 ? 2.6 : 0);
+          B.build.add(TPL.boxB, L.x, y, L.z, hw, hh, hd, L.hd, 0, [[.86, .82, .72], [.78, .74, .66], [.9, .88, .82], [.75, .68, .55]][Math.floor(r(j + 90) * 4)], 1, hh > 4 ? 2 : 1);
+          Bl.add(TPL.pyr, L.x, y + hh, L.z, hw + 1.2, 2.8, hd + 1.2, L.hd, 0, roof);
+          if (r(j + 100) < .7) { const t = D.loc(so + side * 9, u + 6); Town.tree(Bl, t.x, meshH(so + side * 9, u + 6) - .4, t.z, 2 + r(j + 110) * 1.4, [.14, .35, .17]); }
+        }
+        if (r(sg + 23) < .45) { const u = sg * (au0 + 10), so = R.s0 + this.off(R, u) + 24; if (meshH(so, u) > 1) { const L = D.loc(so, u), y = groundMin(so, u, 6) - .2;
+          B.build.add(TPL.boxB, L.x, y, L.z, 9, 8, 16, L.hd, 0, [.9, .88, .82], 1, 2); Bl.add(TPL.pyr, L.x, y + 8, L.z, 10, 4, 17, L.hd, 0, roof); const T = D.loc(so, u + sg * 9); Bl.add(TPL.boxB, T.x, y, T.z, 4, 17, 4, 0, 0, [.88, .86, .8]); Bl.add(TPL.cone, T.x, y + 17, T.z, 3, 7, 3, 0, 0, [.3, .45, .38]); } }
+      }
+    }
+  }
+};
 const Rail = {
   seed: 1, zones: new Map(), px: [0], pz: [0], ph: [0], nx: [], nz: [], nh: [], route: {},
   /* station layout: 'dense' = a station every 6 km (free ride, scenic, cabin, photo); 'sparse' = intercity spacing of
@@ -977,7 +1080,10 @@ const Rail = {
         evergreen: [['tunnel', .14], ['bridge', .18], ['village', .2], ['industrial', .1], ['junction', .08]], sakura: [['bridge', .22], ['village', .3], ['city', .1], ['junction', .08]] }[dom];
       let pick = null; if (TBL) { let acc = 0; for (const [k, pr] of TBL) { acc += pr; if (r < acc) { pick = k; break; } } if (!pick) pick = 'nature'; }
       const is = (k, lo, hi) => pick ? pick === k : r >= lo && r < hi;
-      if (is('bridge', 0, .22)) { z.kind = 'bridge'; z.riverHalf = 40 + H(sd, zi, 3) * 30; z.half = z.riverHalf + 120; z.gorge = dom === 'mountains' || dom === 'desert' || dom === 'alpine'; }
+      if (is('bridge', 0, .22)) { z.kind = 'bridge'; z.gorge = dom === 'mountains' || dom === 'desert' || dom === 'alpine'; const rw = H(sd, zi, 9);
+        /* most rivers are 80–140 m wide; some are big rivers (220–440 m); in low wet land some crossings are bays or estuaries 0.6–1.2 km wide */
+        z.riverHalf = !z.gorge && rw < .14 && (dom === 'wetland' || dom === 'temperate' || dom === 'grassland' || dom === 'sakura') ? 300 + H(sd, zi, 3) * 320 : !z.gorge && rw < .4 ? 110 + H(sd, zi, 3) * 110 : 40 + H(sd, zi, 3) * 30;
+        z.half = z.riverHalf + 120; }
       else if (is('tunnel', .22, .40)) { z.kind = 'tunnel'; z.half = 300 + H(sd, zi, 3) * (dom === 'mountains' ? 650 : 400); z.c = Math.round(z.c / 8) * 8; z.Ht = Math.round((z.half - 150) / 8) * 8; }
       else if (is('village', .40, .58)) { z.kind = 'village'; z.half = 380; }
       else if (is('industrial', .58, .72)) { z.kind = 'industrial'; z.half = 420; }
@@ -1530,7 +1636,7 @@ function terrH(b, u, x, z) {
   if (b.ind > 0) h = lerp(h, b.ty - .5, b.ind * (1 - sm(150, 300, au)));
   if (b.stf > 0) h = lerp(h, b.ty - .5, b.stf * (1 - sm(75, 175, au)));
   if (b.dep > 0) { const du = u < b.depU - 16 ? b.depU - 16 - u : u > -2 ? u + 2 : 0; h = lerp(h, b.ty - .5, b.dep * (1 - sm(0, 38, du))); }
-  if (b.dip > 0) h = lerp(h, -6, b.dip * (1 - sm(180, 360, au)));
+  { const rd = Rivers.dip(b, u, h); if (rd > 0) h = lerp(h, -6 - 4 * sm(.85, 1, rd), rd); }
   /* road underpass: a trench across the line, level under the rail bridge and climbing to the natural ground at 7 % */
   if (b.ud) { const w = 1 - sm(10, 15, Math.abs(b.s - b.ud.s)); if (w > 0) { const prof = lerp(b.ud.rl, h, sm(14, 120, Math.abs(u - BEDC))); h = lerp(h, Math.min(h, prof), w); } }
   if (b.tin > -330) {
@@ -1576,7 +1682,7 @@ const _col = [0, 0, 0];
 function terrColor(b, u, x, z, h) {
   /* far from the line the mesh columns are hundreds of metres apart: fine detail (37 m noise, 90 m fields, flowers) would
      stretch into long stripes there, so it fades to the local average with the distance from the track */
-  const sd = Rail.seed, au = Math.abs(u), far = sm(250, 900, au), n1 = lerp(vn2(x / 37, z / 37, sd + 5), .5, far), dry = vn2(x / 300, z / 300, sd + 6);
+  const sd = Rail.seed, au = Math.abs(u), aT = b.tin > 4 ? Math.max(au, 30) : au /* over a tunnel the ground is ordinary mountainside, not trackside */, far = sm(250, 900, au), n1 = lerp(vn2(x / 37, z / 37, sd + 5), .5, far), dry = vn2(x / 300, z / 300, sd + 6);
   let r = .2 + .16 * dry + .05 * n1, g = .36 + .1 * (1 - dry) + .04 * n1, bl = .14 + .03 * dry;
   if (b.gold > .01) { const k = b.gold * (1 - b.forest * .6) * .85, dn = vn2(x / 140, z / 140, sd + 17); r = lerp(r, .64 + .08 * dn + .04 * n1, k); g = lerp(g, .56 + .05 * dn + .03 * n1, k); bl = lerp(bl, .24 + .03 * dn, k); }
   if (b.bw && b.bw.alpine > .01) { const k = b.bw.alpine * .5, dn = vn2(x / 160, z / 160, sd + 18); r = lerp(r, .27 + .05 * n1 + .05 * dn, k); g = lerp(g, .47 + .04 * n1, k); bl = lerp(bl, .18 + .02 * dn, k); }
@@ -1585,7 +1691,7 @@ function terrColor(b, u, x, z, h) {
   /* fallen cherry petals and autumn leaves on the ground of the groves */
   if (b.sak > .01) { const k = b.sak * b.forest * .42 * (.7 + .6 * n1) * (1 - far * .5); r = lerp(r, .86, k); g = lerp(g, .62, k); bl = lerp(bl, .7, k); }
   if (b.aut > .01) { const k = b.aut * b.forest * .5 * (.7 + .6 * n1) * (1 - far * .5); r = lerp(r, .56, k); g = lerp(g, .32, k); bl = lerp(bl, .12, k); }
-  if (b.field > .35 && au > 14) {
+  if (b.field > .35 && aT > 14) {
     const cell = H(Math.floor(x / 90), Math.floor(z / 90), sd + 9), st = Math.sin((x * .8 + z * .6) / 7) * .03 * (1 - far), k = (b.field - .35) / .65 * (1 - sm(0, 6, -h));
     const fr = lerp(cell < .3 ? .62 : cell < .55 ? .3 : cell < .8 ? .5 : .24, .41, far), fg = lerp(cell < .3 ? .55 : cell < .55 ? .5 : cell < .8 ? .38 : .42, .46, far), fb = lerp(cell < .3 ? .2 : cell < .55 ? .17 : cell < .8 ? .2 : .13, .17, far);
     r = lerp(r, fr + st, k * .85); g = lerp(g, fg + st, k * .85); bl = lerp(bl, fb, k * .85);
@@ -1599,16 +1705,16 @@ function terrColor(b, u, x, z, h) {
     if (h > rockL - 60) { const kr = sm(rockL - 60, rockL + 40, h); r = lerp(r, .41 + .05 * n1, kr); g = lerp(g, .4 + .04 * n1, kr); bl = lerp(bl, .39 + .04 * n1, kr);
       const ks = sm(snowL - 30, snowL + 50, h); r = lerp(r, .93, ks); g = lerp(g, .95, ks); bl = lerp(bl, .98, ks); } }
   /* flower patches only where the mesh is fine enough to show them as patches (near the line; 3D flowers stand there too) */
-  if (b.meadow > .2 && au > 12) { const m = b.meadow, fl = vn2(x / 7, z / 7, sd + 12), pick = vn2(x / 14, z / 14, sd + 13); r = lerp(r, .24, m * .5); g = lerp(g, .45, m * .5); bl = lerp(bl, .15, m * .5);
+  if (b.meadow > .2 && aT > 12) { const m = b.meadow, fl = vn2(x / 7, z / 7, sd + 12), pick = vn2(x / 14, z / 14, sd + 13); r = lerp(r, .24, m * .5); g = lerp(g, .45, m * .5); bl = lerp(bl, .15, m * .5);
     if (fl > .8 && au < 45) { const k = m * sm(.8, .9, fl) * (1 - sm(22, 45, au)) * .5; const c = pick < .33 ? [.8, .36, .4] : pick < .66 ? [.86, .78, .32] : [.86, .86, .9]; r = lerp(r, c[0], k); g = lerp(g, c[1], k); bl = lerp(bl, c[2], k); } }
-  if (b.arid > .02) { const dn = vn2(x / 190, z / 190, sd + 7), k = b.arid * (1 - sm(0, 8, 14 - au)) ; const c = [.78 - .08 * dn + .04 * n1, .66 - .09 * dn, .42 - .08 * dn]; r = lerp(r, c[0], k); g = lerp(g, c[1], k); bl = lerp(bl, c[2], k); }
-  if (b.swamp > .02) { const k = b.swamp * (1 - sm(0, 10, 14 - au)) * .85, mud = vn2(x / 9, z / 9, sd + 14); r = lerp(r, .16 + .06 * mud, k); g = lerp(g, .2 + .05 * mud, k); bl = lerp(bl, .1, k); }
+  if (b.arid > .02) { const dn = vn2(x / 190, z / 190, sd + 7), k = b.arid * (1 - sm(0, 8, 14 - aT)) ; const c = [.78 - .08 * dn + .04 * n1, .66 - .09 * dn, .42 - .08 * dn]; r = lerp(r, c[0], k); g = lerp(g, c[1], k); bl = lerp(bl, c[2], k); }
+  if (b.swamp > .02) { const k = b.swamp * (1 - sm(0, 10, 14 - aT)) * .85, mud = vn2(x / 9, z / 9, sd + 14); r = lerp(r, .16 + .06 * mud, k); g = lerp(g, .2 + .05 * mud, k); bl = lerp(bl, .1, k); }
   const sand = (1 - sm(.3, 2.4, h)) * (1 - far * .75); r = lerp(r, .74, sand * .9); g = lerp(g, .68, sand * .9); bl = lerp(bl, .48, sand * .9);
   const wet = 1 - sm(-3, 0, h); r = lerp(r, .07, wet); g = lerp(g, .17, wet); bl = lerp(bl, .2, wet);
   const sn = b.snow * (1 - sm(0, 2, -h)) * (.85 + .15 * n1); r = lerp(r, .93, sn); g = lerp(g, .95, sn); bl = lerp(bl, .98, sn);
-  const bd = bedD(u), gr = (1 - sm(2.8, 4.0, bd)) * (1 - b.dip); r = lerp(r, .34, gr * (1 - sn * .6)); g = lerp(g, .32, gr * (1 - sn * .6)); bl = lerp(bl, .29, gr * (1 - sn * .6));
+  const bd = bedD(u), gr = (1 - sm(2.8, 4.0, bd)) * (1 - b.dip) * (1 - sm(-10, 4, b.tin));   /* no ballast colour on the mountain over a tunnel */ r = lerp(r, .34, gr * (1 - sn * .6)); g = lerp(g, .32, gr * (1 - sn * .6)); bl = lerp(bl, .29, gr * (1 - sn * .6));
   /* bare cutting faces: rock / clay colour on steep engineered slopes next to the formation */
-  const cutk = sm(.8, 3.5, h - b.ty) * (1 - sm(12, 34, bd)) * (1 - b.urban); if (cutk > 0) { const cc = b.mount > .45 ? [.46 + .05 * n1, .44 + .04 * n1, .41] : [.47 + .04 * n1, .4, .3]; r = lerp(r, cc[0], cutk * .75); g = lerp(g, cc[1], cutk * .75); bl = lerp(bl, cc[2], cutk * .75); }
+  const cutk = sm(.8, 3.5, h - b.ty) * (1 - sm(12, 34, bd)) * (1 - b.urban) * (1 - sm(-10, 4, b.tin));   /* not over a tunnel: there it is the mountainside, not a cutting */ if (cutk > 0) { const cc = b.mount > .45 ? [.46 + .05 * n1, .44 + .04 * n1, .41] : [.47 + .04 * n1, .4, .3]; r = lerp(r, cc[0], cutk * .75); g = lerp(g, cc[1], cutk * .75); bl = lerp(bl, cc[2], cutk * .75); }
   const ur = Math.max(b.city * (1 - sm(b.cityU || 300, (b.cityU || 300) + 90, au)), b.ind * (1 - sm(200, 340, au)), b.stn * .6 * (1 - sm(200, 340, au))); r = lerp(r, .36, ur); g = lerp(g, .36, ur); bl = lerp(bl, .37, ur);
   const vl = b.vill * (1 - sm(100, 240, au)) * .35; r = lerp(r, .3, vl); g = lerp(g, .42, vl);
   _col[0] = r; _col[1] = g; _col[2] = bl; return _col;
@@ -1673,12 +1779,22 @@ class Chunk {
         const q = terrColor(b, u, x, z, h); col[i] = q[0]; col[i + 1] = q[1]; col[i + 2] = q[2];
       }
     }
-    const full = [], inner = [];
+    const full = [], inner = [], fp = [], fcl = [];
+    /* tunnel portals: a height map cannot have a hole, so between the last row of the cutting (track level) and the first
+       row of the mountain it rises as a steep face — and that face stands 0–16 m behind the portal, right in the arch
+       opening (a "wall" seen from afar, driven through by the train). Over the opening those cells are left out and the
+       mountain is closed by a slope that starts above the headwall (hidden behind it), so the arch stays open */
+    const face = (r, k) => { const A = this.rows[r].b, Bn = this.rows[r + 1].b; if (A.tin < -8 && Bn.tin < -8) return 0; if ((A.tin < 8) === (Bn.tin < 8)) return 0;
+      return Math.abs(UC[k] - TUN.uc) <= 7 && Math.abs(UC[k + 1] - TUN.uc) <= 7 ? (A.tin < 8 ? 1 : 2) : 0; };
     for (let r = 0; r < R - 1; r++) for (let k = 0; k < NC - 1; k++) {
-      const a = r * NC + k, b2 = a + 1, c2 = a + NC, d = c2 + 1;
+      const a = r * NC + k, b2 = a + 1, c2 = a + NC, d = c2 + 1, fc = face(r, k);
+      if (fc) { if (r >= 1 && r <= NR) { const low = fc === 1 ? r : r + 1, top = this.rows[low].p.y + 12.2, V = i => { const lo = Math.floor(i / NC) === low; return [pos[i * 3], lo ? Math.max(pos[i * 3 + 1], top) : Math.max(pos[i * 3 + 1], top + .5), pos[i * 3 + 2]]; };
+          for (const i of [a, b2, c2, b2, d, c2]) { fp.push(...V(i)); fcl.push(col[i * 3], col[i * 3 + 1], col[i * 3 + 2]); } } continue; }
       full.push(a, b2, c2, b2, d, c2);
       if (r >= 1 && r <= NR) inner.push(a, b2, c2, b2, d, c2);
     }
+    if (fp.length) { const fg = new THREE.BufferGeometry(); fg.setAttribute('position', new THREE.Float32BufferAttribute(fp, 3)); fg.setAttribute('color', new THREE.Float32BufferAttribute(fcl, 3)); fg.computeVertexNormals();
+      this.group.add(new THREE.Mesh(fg, MAT.terrain)); }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     g.setIndex(full); g.computeVertexNormals(); g.setIndex(inner); g.computeBoundingSphere();
@@ -1823,7 +1939,7 @@ class Chunk {
       const vz = (zz.kind === 'village' || (zz.kind === 'station' && (zz.sk === 'village' || zz.sk === 'town'))) && Math.abs(s - zz.c) < vh + 12 ? zz : null;
       const vlanes = vz ? (vz.sk === 'town' || Rail.town(vz).pop > 4000 ? [-80, -34, 34, 80] : [-30, 30]) : null;
       for (let u = -250; u <= 250; u += 11) {
-        const au = Math.abs(u); if ((vlanes && vlanes.some(ul => Math.abs(u - ul) < 25)) || bedD(u) < 10 || (b.dep > .05 && u < 4 && u > b.depU - 40) || (road && au < RMAX + 40) || (b.stn > .1 && au < 70) || (b.tin > -90 && Math.abs(u - TUN.uc) < 40) || (b.jz && bedD(u - b.ju) < 10)) continue;
+        const au = Math.abs(u); if ((vlanes && vlanes.some(ul => Math.abs(u - ul) < 25)) || bedD(u) < 10 || (b.dep > .05 && u < 4 && u > b.depU - 40) || (road && au < 75) || (au > 55 && Roads.near(s, u, 13)) || (b.stn > .1 && au < 70) || (b.tin > -90 && Math.abs(u - TUN.uc) < 40) || (b.jz && bedD(u - b.ju) < 10)) continue;
         const hs = H(s | 0, u | 0, sd + 40); if (hs > dens * (au > 120 ? .45 : 1)) continue;
         const ss = s + (H(s | 0, u | 0, sd + 41) - .5) * 10, uu = u + (H(s | 0, u | 0, sd + 42) - .5) * 10;
         const x = p.x - c * uu + sn * (ss - s) * 0, z = p.z + sn * uu + c * (ss - s) * 0;
@@ -2022,8 +2138,7 @@ const ZoneDecor = {
     if (s < ch.s0 || s >= ch.s1) return;
     const bi = Rail.bio(s);
     const q = (ss, uu) => { const L = this.loc(ss, uu); return [L.x, (uu > -11 && uu < 6.5 ? L.ty - .18 : meshH(ss, uu) + .06), L.z]; };
-    const city = z.kind === 'city' || (z.kind === 'station' && z.sk === 'city'), sp = city ? [-120, 120] : roadSpan(s, -RMAX, RMAX); for (let u = sp[0]; u < sp[1]; u += 6) B.lit.quad(q(s - 3.5, u), q(s + 3.5, u), q(s + 3.5, u + 6), q(s - 3.5, u + 6), [.17, .17, .18], true);
-    if (!city) for (const [e, sg] of [[sp[0], -1], [sp[1], 1]]) if (Math.abs(e) < RMAX - 40) this.dest(ch, B, s, e, sg, z);
+    const city = z.kind === 'city' || (z.kind === 'station' && z.sk === 'city'), sp = city ? [-120, 120] : [-60, 60]; if (!city) { const RR = Roads.find(z, s, 'x'); if (RR) Roads.build(ch, B, RR, this); } for (let u = sp[0]; u < sp[1]; u += 6) B.lit.quad(q(s - 3.5, u), q(s + 3.5, u), q(s + 3.5, u + 6), q(s - 3.5, u + 6), [.17, .17, .18], true);
     /* rubber crossing panels across both tracks, white stop lines and edge marks */
     for (const ut of [0, -U2]) { const L = this.loc(s, ut); B.lit.add(TPL.box, L.x, L.ty - .12, L.z, 3.1, .1, 7.2, L.hd, 0, [.24, .24, .25]); }
     for (const [uu, f] of [[8.2, 1], [-12.8, -1]]) { const L = this.loc(s - 1.75 * f, uu); B.lit.add(TPL.box, L.x, meshH(s - 1.75 * f, uu) + .07, L.z, .4, .03, 3.4, L.hd + Math.PI / 2, 0, [.92, .92, .9]); }
@@ -2040,7 +2155,9 @@ const ZoneDecor = {
   },
   bridge(ch, B, z) {
     const a = Math.max(ch.s0, z.c - z.half), b = Math.min(ch.s1, z.c + z.half); if (a >= b) return;
-    const aa = {}, bb = {}, sd = Rail.seed, typ = ['beam', 'truss', 'arch', 'truss', 'beam'][Math.floor(H(sd, z.zi, 404) * 5)], rv = Rail.grade(z).river;
+    const aa = {}, bb = {}, sd = Rail.seed, wide = z.riverHalf > 150, typ = wide ? ['beam', 'mtruss', 'march', 'mtruss'][Math.floor(H(sd, z.zi, 404) * 4)] : ['beam', 'truss', 'arch', 'truss', 'beam'][Math.floor(H(sd, z.zi, 404) * 5)], rv = Rail.grade(z).river;
+    /* long crossings (big rivers, bays): repeated spans of 60–90 m on piers standing in the water */
+    const SP = 60 + H(sd, z.zi, 406) * 30, s0w = z.c - z.riverHalf - 18, spanOf = q => { const k = Math.floor((q - s0w) / SP); return { k, c: s0w + (k + .5) * SP, joint: Math.abs(q - (s0w + Math.round((q - s0w) / SP) * SP)) }; };
     const steel = [[.36, .42, .5], [.55, .27, .18], [.28, .42, .36]][Math.floor(H(sd, z.zi, 405) * 3)], CON = [.62, .62, .6];
     const R = z.riverHalf + 18, sprY = Math.max(.5, Rail.ty(z.c) - 26);
     for (let s = Math.floor(a / 10) * 10; s < b; s += 10) {
@@ -2048,7 +2165,9 @@ const ZoneDecor = {
       ptAt(s, BEDC, aa); ptAt(s + 10, BEDC, bb);
       const dx = bb.x - aa.x, dz = bb.z - aa.z, dy = bb.y - aa.y, lh = Math.hypot(dx, dz), yaw = Math.atan2(dx, dz), pit = Math.atan2(dy, lh), len = Math.hypot(lh, dy);
       const cx = (aa.x + bb.x) / 2, cy = (aa.y + bb.y) / 2, cz = (aa.z + bb.z) / 2, rx = -Math.cos(yaw), rz = Math.sin(yaw), sm5 = s + 5, ds = Math.abs(sm5 - z.c);
-      const overRiver = ds < R, ty = typ === 'truss' && overRiver ? 'truss' : typ === 'arch' && overRiver ? 'arch' : 'beam';
+      const overRiver = ds < R, ty = (typ === 'truss' || typ === 'mtruss') && overRiver ? 'truss' : typ === 'arch' && overRiver ? 'arch' : typ === 'march' && overRiver ? 'march' : 'beam';
+      /* piers at the span joints of long crossings: from the river bed to under the deck, with a cutwater */
+      if ((typ === 'mtruss' || typ === 'march') && overRiver && spanOf(sm5).joint < 5) { const g = -6, hp = cy - 2.3 - g; B.lit.add(TPL.boxB, cx, g, cz, 11.2, hp, 4.2, yaw, 0, [.6, .6, .58]); B.lit.add(TPL.boxB, cx, g, cz, 12.4, 6.4, 5.4, yaw, 0, [.48, .48, .46]); }
       B.lit.add(TPL.box, cx, cy - 1.45, cz, 11.6, 1.2, len + .1, yaw, pit, CON);
       B.lit.add(TPL.box, cx, cy - 2.1, cz, 9.6, .3, len + .1, yaw, pit, [.5, .5, .49]);
       for (const sg of [-1, 1]) {
@@ -2074,6 +2193,11 @@ const ZoneDecor = {
         const yA = f => sprY + (cy - 2.3 - sprY) * (1 - (f / R) * (f / R)), y0 = yA(Math.abs(s - z.c)), y1 = yA(Math.abs(s + 10 - z.c));
         for (const sg of [-1, 1]) { const ox = rx * 3.6 * sg, oz = rz * 3.6 * sg; B.lit.add(TPL.box, cx + ox, (y0 + y1) / 2, cz + oz, 1.6, 1.4, Math.hypot(10, y1 - y0) + .3, yaw, Math.atan2(y1 - y0, 10) * (s + 5 > z.c ? 1 : 1), CON); }
         const hc = cy - 2.2 - y0; if (hc > .8) for (const sg of [-1, 1]) B.lit.add(TPL.boxB, aa.x + rx * 3.6 * sg, y0, aa.z + rz * 3.6 * sg, 1.2, hc, 1.2, yaw, 0, [.58, .58, .56]);
+      } else if (ty === 'march') {
+        /* one concrete arch per span, springing from the piers */
+        const sp = spanOf(sm5), Rl = SP / 2, spr = Math.max(.5, cy - 2.3 - Math.min(24, SP * .38)), yA = q => spr + (cy - 2.3 - spr) * (1 - Math.min(1, ((q - sp.c) / Rl) * ((q - sp.c) / Rl))), y0 = yA(s), y1 = yA(s + 10);
+        for (const sg of [-1, 1]) { const ox = rx * 3.6 * sg, oz = rz * 3.6 * sg; B.lit.add(TPL.box, cx + ox, (y0 + y1) / 2, cz + oz, 1.5, 1.3, Math.hypot(10, y1 - y0) + .3, yaw, Math.atan2(y1 - y0, 10), CON); }
+        const hc = cy - 2.2 - y0; if (hc > .8) for (const sg of [-1, 1]) B.lit.add(TPL.boxB, aa.x + rx * 3.6 * sg, y0, aa.z + rz * 3.6 * sg, 1.1, hc, 1.1, yaw, 0, [.58, .58, .56]);
       } else if (((s / 10) | 0) % 3 === 0 && !(rv && Math.abs(sm5 - rv.s) < 13)) {
         const bi = Rail.bio(s), g = terrH(bi, BEDC, cx, cz), hh = cy - 2.1 - g;
         if (hh >= 2) { B.lit.add(TPL.boxB, cx, g - .5, cz, 10.4, hh + .5, 2.6, yaw, 0, [.58, .58, .56]); B.lit.add(TPL.boxB, cx, cy - 2.6, cz, 12, .55, 3.0, yaw, 0, [.52, .52, .5]); if (hh > 14) B.lit.add(TPL.boxB, cx, g - .5, cz, 11.4, 2.5, 3.4, yaw, 0, [.5, .5, .48]); }
@@ -2164,8 +2288,8 @@ const ZoneDecor = {
   },
   /* road along u at track position s0, following a height profile yf(u); markings, verges and street lamps */
   roadAcross(ch, B, s0, u0, u1, yf, o) {
-    if (s0 + 6 < ch.s0 || s0 - 6 >= ch.s1) return; o = o || {}; const w = o.w || 3.8, St = 6, sp = roadSpan(s0, u0, u1), U0 = u0, U1 = u1; u0 = Math.max(u0, sp[0]); u1 = Math.min(u1, sp[1]);
-    if (o.z && s0 >= ch.s0 && s0 < ch.s1) { if (U0 < -60 && u0 > -RMAX + 40) this.dest(ch, B, s0, u0, -1, o.z); if (U1 > 60 && u1 < RMAX - 40) this.dest(ch, B, s0, u1, 1, o.z); }
+    if (s0 + 6 < ch.s0 || s0 - 6 >= ch.s1) return; o = o || {}; const w = o.w || 3.8, St = 6;
+    if (o.R) { const a = Math.abs(o.R.u0) + 60; u0 = Math.max(u0, -a); u1 = Math.min(u1, a); Roads.build(ch, B, o.R, this); }
     const q = (ss, uu, dy) => { const L = this.loc(ss, uu); return [L.x, yf(uu, L, ss) + (dy || .06), L.z]; };
     for (let u = u0; u < u1; u += St) {
       const ub = Math.min(u1, u + St); if (o.skip && o.skip(u, ub)) continue;
@@ -2217,7 +2341,7 @@ const ZoneDecor = {
   /* a road that leaves a village / industrial area at its end and runs away from the railway */
   exitRoads(ch, B, z, lanes, ends) {
     for (const se of ends) if (se >= ch.s0 && se < ch.s1) for (const ul of lanes) {
-      const sg = ul > 0 ? 1 : -1; this.roadAcross(ch, B, se, sg > 0 ? ul : -RMAX, sg > 0 ? RMAX : ul, (uu, L, ss) => meshH(ss == null ? se : ss, uu), { z, w: 3.2 });
+      const sg = ul > 0 ? 1 : -1; this.roadAcross(ch, B, se, sg > 0 ? ul : -RMAX, sg > 0 ? RMAX : ul, (uu, L, ss) => meshH(ss == null ? se : ss, uu), { z, w: 3.2, R: Roads.list(z).find(R => R.kind === 'e' && Math.abs(R.s0 - se) < .5 && R.u0 === ul) });
     }
   },
   /* grade-separated crossings: rail bridge over an underpass road, road overbridge over a cutting, riverside road under a river bridge */
@@ -2226,7 +2350,7 @@ const ZoneDecor = {
     for (const U of g.under) {
       if (U.s + 140 < ch.s0 || U.s - 140 >= ch.s1) continue;
       const bi = Rail.bio(U.s), yf = (uu, L, ss) => meshH(ss == null ? U.s : ss, uu);
-      this.roadAcross(ch, B, U.s, -RMAX, RMAX, yf, { skip: (a, b) => b > BEDC - 6.4 && a < BEDC + 6.4, z });
+      this.roadAcross(ch, B, U.s, -RMAX, RMAX, yf, { skip: (a, b) => b > BEDC - 6.4 && a < BEDC + 6.4, z, R: Roads.find(z, U.s, 'u') });
       if (U.s >= ch.s0 && U.s < ch.s1) {
         const C = this.loc(U.s, BEDC), ty = C.ty, rl = U.rl;
         /* bridge deck carrying both tracks, edge beams and parapets */
@@ -2244,7 +2368,7 @@ const ZoneDecor = {
     for (const O of g.over) {
       if (O.s + 140 < ch.s0 || O.s - 140 >= ch.s1) continue;
       const bi = Rail.bio(O.s), yf = (uu, L, ss) => { const t = meshH(ss == null ? O.s : ss, uu); return Math.abs(uu - BEDC) < 24 ? Math.max(t, O.hd) : t; };
-      this.roadAcross(ch, B, O.s, -RMAX, RMAX, yf, { z });
+      this.roadAcross(ch, B, O.s, -RMAX, RMAX, yf, { z, R: Roads.find(z, O.s, 'o') });
       if (O.s >= ch.s0 && O.s < ch.s1) {
         const C = this.loc(O.s, BEDC);
         Bl.add(TPL.box, C.x, O.hd - .55, C.z, 48, 1.0, 11, C.hd + Math.PI / 2, 0, CON);
@@ -2256,7 +2380,7 @@ const ZoneDecor = {
     }
     if (g.river) {
       const s0 = g.river.s, yf = (uu, L, ss) => Math.max(.35, meshH(ss == null ? s0 : ss, uu));
-      this.roadAcross(ch, B, s0, -RMAX, RMAX, yf, { z });
+      this.roadAcross(ch, B, s0, -RMAX, RMAX, yf, { z, R: Roads.find(z, s0, 'r') });
     }
   },
   station(ch, B, z) {
@@ -4587,18 +4711,19 @@ const Traffic = {
       }
       for (let kb = Math.ceil(a / BLK); kb * BLK <= b; kb++) { const s = kb * BLK, x = xs.some(q => Math.abs(q - s) < 1); if (x) add('u', s, -U1, U1, { vm: 12, xing: true, city: true }); else { if (!blocked(s - 6, s + 6, 14, U1)) add('u', s, 14, U1, { vm: 12, city: true }); if (!blocked(s - 6, s + 6, -U1, -14)) add('u', s, -U1, -14, { vm: 12, city: true }); } }
     } else {
-      const exit = (se, ul) => { const sp = roadSpan(se, ul > 0 ? ul : -RMAX, ul > 0 ? RMAX : ul); add('u', se, Math.max(sp[0], ul > 0 ? ul : -RMAX), Math.min(sp[1], ul > 0 ? RMAX : ul), { vm: 14, rural: true }); };
+      /* rural roads follow the network course (Roads.off) out to the edge of the detailed land */
+      const U9 = Roads.U1, exit = (se, ul) => add('u', se, ul > 0 ? ul : -U9, ul > 0 ? U9 : ul, { vm: 14, rural: true, path: Roads.list(z).find(R => R.kind === 'e' && Math.abs(R.s0 - se) < .5 && R.u0 === ul) });
       if (z.kind === 'village' || (z.kind === 'station' && (z.sk === 'village' || z.sk === 'town'))) {
         const town = z.sk === 'town' || T.pop > 4000, lanes = town ? [-80, -34, 34, 80] : [-30, 30], a = z.c - z.half - 20, b = z.c + z.half + 20;
         for (const ul of lanes) { add('s', ul, a, b, { vm: 9, vill: true }); if (!town || Math.abs(ul) > 60) { exit(a, ul); exit(b, ul); } }
       }
       if (z.kind === 'industrial') for (const sg of [-1, 1]) { const a = Math.ceil((z.c - z.half + 20) / 52) * 52, b = Math.ceil((z.c + z.half - 20) / 52) * 52; add('s', sg * 30, a, b, { vm: 8, ind: true }); exit(a, sg * 30); exit(b, sg * 30); }
-      for (const s of xs) { const sp = roadSpan(s, -RMAX, RMAX); add('u', s, sp[0], sp[1], { vm: z.kind === 'nature' ? 17 : 13, xing: true, rural: true }); }
+      for (const s of xs) add('u', s, -U9, U9, { vm: z.kind === 'nature' ? 17 : 13, xing: true, rural: true, path: Roads.find(z, s, 'x') });
       /* grade-separated roads: under the rail bridge, over the cutting, along the river bank */
       const gr = Rail.grade(z);
-      for (const U of gr.under) { const sp = roadSpan(U.s, -RMAX, RMAX); add('u', U.s, sp[0], sp[1], { vm: 16, rural: true, under: U }); }
-      for (const O of gr.over) { const sp = roadSpan(O.s, -RMAX, RMAX); add('u', O.s, sp[0], sp[1], { vm: 16, rural: true, over: O }); }
-      if (gr.river) { const sp = roadSpan(gr.river.s, -RMAX, RMAX); add('u', gr.river.s, sp[0], sp[1], { vm: 15, rural: true, river: true }); }
+      for (const U of gr.under) add('u', U.s, -U9, U9, { vm: 16, rural: true, under: U, path: Roads.find(z, U.s, 'u') });
+      for (const O of gr.over) add('u', O.s, -U9, U9, { vm: 16, rural: true, over: O, path: Roads.find(z, O.s, 'o') });
+      if (gr.river) add('u', gr.river.s, -U9, U9, { vm: 15, rural: true, river: true, path: Roads.find(z, gr.river.s, 'r') });
     }
     /* intersections between axes */
     for (const A of L) if (A.ax === 's') for (const Bn of L) if (Bn.ax === 'u') {
@@ -4643,14 +4768,17 @@ const Traffic = {
     this.veh.push({ id: this.nextId++, type, len: VTt.len, line: ln, t, dir, v: vm * .8, vm, g, lamp, beacon, x: o.x, z: o.z, yaw: o.yaw, stuck: 0, y: 0, ys: -1e9, emer: !!beacon && type !== 'rail' });
   },
   roadY(ln, o) {
+    if (ln.path && Math.abs(o.u) > Math.abs(ln.path.u0) + 58) return Roads.y(o.s, o.u) + .05;
     const th = meshH(o.s, o.u);
     if (ln.over) return (Math.abs(o.u - BEDC) < 24 ? Math.max(th, ln.over.hd) : th) + .12;
     if (ln.under || ln.river) return Math.max(th, ln.river ? .35 : -99) + .1;
     const bd = bedD(o.u); return bd < 2 ? o.y - .1 : lerp(th + .1, o.y - .1, sm(5.5, 2, bd));
   },
   worldOf(ln, t, dir, o) {
-    let s, u; if (ln.ax === 's') { s = t; u = ln.c + dir * 2.1; } else { s = ln.c - dir * 2.1; u = t; }
-    ptAt(s, u, o); o.s = s; o.u = u; o.yaw = ln.ax === 's' ? (dir > 0 ? o.hd : o.hd + Math.PI) : (dir > 0 ? o.hd - Math.PI / 2 : o.hd + Math.PI / 2); return o;
+    let s, u, ds = 0; if (ln.ax === 's') { s = t; u = ln.c + dir * 2.1; } else { const P = ln.path; if (P) { const g = Roads.off(P, t); ds = (Roads.off(P, t + 1) - Roads.off(P, t - 1)) / 2; s = ln.c + g - dir * 2.1; } else s = ln.c - dir * 2.1; u = t; }
+    ptAt(s, u, o); o.s = s; o.u = u;
+    if (ln.ax === 'u' && ds) { const sh = Math.sin(o.hd), ch = Math.cos(o.hd), dx = dir * (ds * sh - ch), dz = dir * (ds * ch + sh); o.yaw = Math.atan2(dx, dz); }   /* along the winding road */
+    else o.yaw = ln.ax === 's' ? (dir > 0 ? o.hd : o.hd + Math.PI) : (dir > 0 ? o.hd - Math.PI / 2 : o.hd + Math.PI / 2); return o;
   },
   update(dt, G, camPos) {
     const on = SettingsManager.v.fxTraffic;

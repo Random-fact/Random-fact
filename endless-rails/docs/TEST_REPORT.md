@@ -479,3 +479,47 @@ rendering at half rate while paused; fewer audio automation events per second.
 * Traffic: side streets end next to the line (cars turn there), 90° turns at speed, no right of way at unlit junctions,
   cars appear 170 m away in view. Cameras: no collision with buildings for cinematic shots at stations.
 * Not tested on a real phone.
+
+## Update 18 Nov 2026 (10): open tunnel portals, long rivers, road network
+### Tunnels
+* Cause of the "wall" in front of the portal: the land is a height map, and between the last row of the cutting (track
+  level) and the first row of the mountain it rose as a steep face that stood 0–16 m behind the portal — right in the
+  arch opening. From afar the opening looked closed, and the train drove through that face.
+* Fix in the terrain mesh: over the opening (±7 m around the tube axis) those cells are left out; the mountain is closed
+  by a slope that starts just below the top of the headwall (hidden behind it). Entrance and exit are open: from afar
+  the dark tube with its lamps is seen through the arch; at night the lit tunnel shows in the dark slope.
+* A light stripe ran over the whole mountain along each tunnel (ballast, cutting and "track side" ground colours were
+  applied over the tunnel). Over a tunnel the ground is now coloured as ordinary mountainside.
+* Lighting fades in and out with the existing tunnel transition; tunnel reverb on train sounds as before.
+
+### Rivers
+* Every river is one long winding channel (`Rivers`): it crosses the line under its bridge and continues on both
+  sides through the whole detailed land and the far landscape (no start or end in view). Bends on three scales grow
+  with the distance from the line (up to ~700 m) and never reach the towns along the line; the width changes along the
+  course; banks are shallow on low land and form valleys or gorges in high land. Chunks and the far layer evaluate the
+  same functions, so the river continues between chunks without seams.
+* Widths: most rivers 80–140 m; big rivers 220–440 m; in low wet land some crossings are bays or estuaries 0.6–1.2 km
+  wide that open out further away.
+* Long bridges for wide water: repeated 60–90 m spans on piers with cutwaters standing in the water — continuous steel
+  truss, a row of concrete arches, or a girder viaduct — besides the earlier single-span truss, arch and beam bridges.
+  Measured in one world: bridges of 1.2 km (truss) over a 1 km bay; the train rides over open water.
+### Roads
+* Every road leaving the line (level crossings, underpasses, overbridges, village and industrial exits, the road along
+  the river) is part of one network (`Roads`): straight for its first 60 m, then it winds with the land (tighter in the
+  mountains), crosses rivers on road bridges with piers and railings, and runs 3.3 km out to the edge of the detailed
+  land, where it fades into the haze. The road along a river follows its bank.
+* Destinations along it: a farm, sawmill, harbour or quarry a few hundred metres out (beside the road, not at a dead
+  end), and a hamlet or village of 6–13 houses 1.3–2.8 km away, some with a church.
+* Trees and rocks keep off the winding roads; cars follow the curves (heading along the road, on bridge decks over water).
+* Level of detail: 12 m segments near the line, 24 m and 40 m further out; centre line and shoulders only where they
+  can be seen. Roads cost ~8 k triangles in a typical view.
+
+### Checks
+* Portals from 90 m and 420 m in front, from the side, from the cab, entry and exit, day and night: the opening is open.
+* Rivers: high views across and along a gorge river, a big river and a 1 km bay; cab and chase views on the long
+  bridge. Roads: high and low views of a crossing road, a village exit and the river road; a top view of a crossing.
+* Long run 330 km: no errors, memory steady. UI scenarios at 834×375 and 390×844. Landmark exclusion zones still
+  respected (4 seeds, with switch flips).
+* Not done: rivers do not change the shape of the far ground between the far-layer rings (narrow rivers far away are
+  coarse or invisible); no road tunnels or serpentines with hairpins; a few roads still run straight on flat land
+  for a long way; tunnels can still be placed under low ridges on flat land. Not tested on a phone.
