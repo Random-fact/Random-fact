@@ -240,6 +240,7 @@ button:disabled{opacity:.45;pointer-events:none}
 #loading .ldtip p{margin:4px 0 0;font-size:13px;line-height:1.45;color:var(--paper);min-height:2.9em;transition:opacity .3s}
 @media (max-height:440px){#loading .ld{gap:8px;width:min(600px,100%)}#loading h1{font-size:28px}#loading .ldtrack{height:38px}#loading .ldtip{padding:7px 10px}#loading .ldtip p{min-height:0}}
 @media (prefers-reduced-motion:reduce){#loading .ldsl,#loading .ldtrain{animation:none}}
+#loading.boot .ldtip{visibility:hidden}#loading{transition:opacity .25s}
 /* ----- dialog ----- */
 #dlg{z-index:45}#dlg .card{width:min(460px,100%);text-align:center}#dlg .dic{font-size:40px}#dlg p{color:var(--steel);line-height:1.5}#dlg .row{justify-content:center}
 /* ----- training panel and braking assistant ----- */
@@ -511,7 +512,7 @@ body.nohud #devtab,body.phidden #devtab,body.photoMode #devtab{display:none!impo
     <div class="main" id="menubody"></div>
   </div>
 </div>
-<div class="ov" id="loading"><div class="ld">
+<div class="ov open boot" id="loading"><div class="ld">
   <h1>ENDLESS <span>RAILS</span></h1><div class="ldsub" id="ldsub"></div>
   <div class="ldtrack" aria-hidden="true"><div class="ldsl"></div><svg class="ldtrain" viewBox="0 0 172 40"><path d="M3 31V13q0-5 5-5h110q24 0 49 21l2 2Z" fill="#e9e4d8"/><path d="M3 24h164v4H3z" fill="#1c3f8c"/><path d="M121 11h11q14 3 26 14h-37z" fill="#0b1017"/><g fill="#0b1017"><rect x="12" y="12" width="15" height="8" rx="1.5"/><rect x="33" y="12" width="15" height="8" rx="1.5"/><rect x="54" y="12" width="15" height="8" rx="1.5"/><rect x="75" y="12" width="15" height="8" rx="1.5"/><rect x="96" y="12" width="15" height="8" rx="1.5"/></g><g fill="#2a3038"><circle cx="20" cy="34" r="4"/><circle cx="34" cy="34" r="4"/><circle cx="128" cy="34" r="4"/><circle cx="142" cy="34" r="4"/></g><circle cx="165" cy="27" r="1.6" fill="#fff6d8"/></svg></div>
   <div class="ldrow"><span id="ldtxt"></span><b id="ldpct">0%</b></div>
@@ -520,8 +521,8 @@ body.nohud #devtab,body.phidden #devtab,body.photoMode #devtab{display:none!impo
 </div></div>
 <div class="ov" id="dlg"><div class="card fx"><div class="dic" id="dlgic"></div><h2 id="dlgt"></h2><div class="cbody"><p id="dlgm"></p></div><div class="row" id="dlgb"></div></div></div>
 </div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script>
+<!--@THREE@-->
+<script type="text/plain" id="er-game">
 'use strict';
 /* ===== ENDLESS RAILS : core utilities ===== */
 const TAU = Math.PI * 2;
@@ -5564,9 +5565,11 @@ const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;'
 const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
 const Loading = {
   TIPS: ['Гальмівний шлях росте приблизно з квадратом швидкості: з 120 км/год потягу потрібно понад кілометр.', 'Помічник гальмування показує, де зупиниться потяг із поточним гальмом.', 'Мокрі рейки зменшують зчеплення — гальмуйте раніше.', 'На спуску потяг гальмує довше, на підйомі — коротше.', 'Жовтий сигнал означає: наступний сигнал може бути червоним, знизьте швидкість.', 'Довгий склад важчий: повільніше розганяється й довше гальмує.', 'Двері відчиняються лише тоді, коли потяг стоїть біля перону.'],
-  show(txt, sub) { $('loading').classList.add('open'); $('ldsub').textContent = sub || ''; this.f = 0; this.set(.02, txt); this.ti = Math.floor(Math.random() * this.TIPS.length); this.tip();
+  show(txt, sub) { $('loading').classList.remove('boot'); $('loading').classList.add('open'); $('ldsub').textContent = sub || ''; this.f = 0; this.set(.02, txt); this.ti = Math.floor(Math.random() * this.TIPS.length); this.tip();
     clearInterval(this.tt); this.tt = setInterval(() => { this.ti = (this.ti + 1) % this.TIPS.length; this.tip(); }, 5000); },
   tip() { const e = $('ldtip'); e.textContent = _T(this.TIPS[this.ti]); },
+  boot(txt) { const L = $('loading'); L.classList.remove('boot'); L.classList.add('open'); this.f = Math.max(this.f || 0, parseFloat($('ldbar').style.width) / 100 || 0); this.set(.75, txt);
+    this.ti = Math.floor(Math.random() * this.TIPS.length); this.tip(); clearInterval(this.tt); this.tt = setInterval(() => { this.ti = (this.ti + 1) % this.TIPS.length; this.tip(); }, 5000); },
   /* progress never goes backwards; the percentage is shown next to the step */
   set(f, txt) { this.f = Math.max(this.f || 0, f); $('ldbar').style.width = Math.round(this.f * 100) + '%'; $('ldpct').textContent = Math.round(this.f * 100) + '%'; if (txt) $('ldtxt').textContent = txt; },
   hide() { $('loading').classList.remove('open'); clearInterval(this.tt); }
@@ -6126,12 +6129,18 @@ function frame(now) {
 }
 
 /* ===== boot ===== */
-window.addEventListener('DOMContentLoaded', () => {
+/* called by the start-up script at the end of the page, after the loading screen has been painted */
+window.__bootGame = () => {
   Profile.load(); const first = !Profile.d.lang; LANG = Profile.d.lang || detectLang(); if (first) { Profile.d.lang = LANG; Profile.d.firstRun = true; }
   const save = SaveSystem.read(); SettingsManager.load(Profile.d.set || (save ? save.set : null)); Profile.d.set = SettingsManager.v;
   applyI18n(document); $('fps').style.display = SettingsManager.v.fps ? '' : 'none'; document.body.classList.toggle('swap', !!SettingsManager.v.swap);
-  if (typeof THREE === 'undefined') { $('load').textContent = _T('Не вдалося завантажити 3D-рушій. Перевірте з’єднання.'); Menu.show('journey'); return; }
-  engineBoot(); Menu.show(Profile.d.firstRun ? 'lang' : 'journey'); Profile.save(true);
+  if (typeof THREE === 'undefined') { Loading.hide(); $('load').textContent = _T('Не вдалося завантажити 3D-рушій. Перевірте з’єднання.'); Menu.show('journey'); window.__booted = true; return; }
+  /* the language is known now: the start-up screen gets its texts, then the graphics start in the next frame */
+  Loading.boot(_T('Запуск графіки…'));
+  requestAnimationFrame(() => setTimeout(() => {
+    engineBoot(); Menu.show(Profile.d.firstRun ? 'lang' : 'journey'); Profile.save(true); Loading.set(1);
+    requestAnimationFrame(() => setTimeout(() => { Loading.hide(); window.__booted = true; }, 120));
+  }, 0));
   /* app lifecycle: save everything when the page is hidden or closed (Android: onPause / onStop) */
   const flush = () => { try { G.save(); Profile.save(true); } catch (e) { } };
   document.addEventListener('visibilitychange', () => { if (document.hidden) { flush(); if (G.running && !G.inMenu) { G.paused = true; UI.mark('pause', true); G.autoPaused = true; } } else if (G.autoPaused) { G.autoPaused = false; } });
@@ -6146,9 +6155,26 @@ window.addEventListener('DOMContentLoaded', () => {
     if (Menu.open) { if (Menu.scr !== 'journey') { Menu.scr = 'journey'; Menu.render(); return true; } if (G.running && G.mode !== 'tutorial') { Menu.cont(); return true; } return false; }
     if (G.running) { G.toMenu(); return true; } return false;
   };
-});
+};
 function engineBoot() { try { initEngine(); } catch (e) { $('load').textContent = _T('Помилка запуску графіки: {0}', e.message); console.error(e); } }
-
+</script>
+<script>
+/* start-up: the loading screen above is painted first; three.js and the game code run afterwards, each in its own task,
+   so the bar moves while they are compiled (on a phone this takes a few seconds). The APK build puts three.js inline
+   into <script type="text/plain" id="er-three">; the web page loads it from the CDN. */
+(function () {
+  var bar = document.getElementById('ldbar'), pct = document.getElementById('ldpct'), txt = document.getElementById('ldtxt');
+  function set(f) { var v = Math.round(f * 100) + '%'; if (bar) bar.style.width = v; if (pct) pct.textContent = v; }
+  function later(f) { var done = false; function go() { if (!done) { done = true; f(); } } requestAnimationFrame(function () { setTimeout(go, 0); }); setTimeout(go, 250); }
+  function run(id) { var t = document.getElementById(id); if (!t) return; var s = document.createElement('script'); s.textContent = t.textContent; t.parentNode.removeChild(t); document.body.appendChild(s); }
+  function game() { set(.4); later(function () { run('er-game'); set(.65); later(function () { if (window.__bootGame) window.__bootGame(); }); }); }
+  if (txt) txt.textContent = '…'; set(.04);
+  later(function () {
+    set(.1);
+    if (document.getElementById('er-three')) { later(function () { run('er-three'); game(); }); }
+    else { var s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'; s.onload = s.onerror = game; document.head.appendChild(s); }
+  });
+})();
 </script>
 </body>
 </html>

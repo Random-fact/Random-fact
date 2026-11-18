@@ -40,9 +40,10 @@ abstract class GameAssetTask : DefaultTask() {
         val j = html.indexOf('>', i)
         html = html.substring(0, i) + "<style>" + rules + "</style>" + html.substring(j + 1)
         html = html.replace(pre, "")
-        val cdn = "<script src=\"https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js\"></script>"
-        check(html.contains(cdn)) { "three.js script tag not found in game.html" }
-        html = html.replace(cdn, "<script>window.IS_APK=true;</script><script>$three</script>")
+        // three.js as data: the page's start-up script runs it after the loading screen has been painted
+        val mark = "<!--@THREE@-->"
+        check(html.contains(mark)) { "three.js placeholder not found in game.html" }
+        html = html.replace(mark, "<script>window.IS_APK=true;</script><script type=\"text/plain\" id=\"er-three\">$three</script>")
         val out = outputDir.get().asFile
         out.mkdirs()
         File(out, "index.html").writeText(html, Charsets.UTF_8)

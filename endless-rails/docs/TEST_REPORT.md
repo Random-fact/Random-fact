@@ -216,3 +216,19 @@ Device in the screenshots: about 834×375 CSS px landscape. All checks below wer
   * Translations: 3 new texts in 9 languages (catalogue 602).
 * Check: first start at 834×375 (uk), 390×844 (en, schedule + HS), 1280×720 (ja, lesson), 568×320 (de). Continuing a
   saved journey restores position, mode and train; a lesson starts. Desktop/phone regression passes with no page errors.
+
+## Update 18 Nov 2026 (4): loading screen at app start
+* Before: when the app was opened, the browser first compiled and ran three.js (about 600 KB) and the game code (about
+  760 KB) and only then painted anything. On a phone the player saw a blank dark screen for several seconds.
+* Now:
+  * The loading screen is part of the page and is **painted first**: title and animated track with the train.
+  * A small start-up script then runs three.js and the game code, each in its own task with a painted frame in
+    between, so the bar moves: 4 → 10 → 40 → 65 % → 75 % “Starting graphics…” (in the player's language once it is
+    known) → 100 % → menu (or the language screen on the very first start).
+  * The web page loads three.js from the CDN; the APK build puts it inline as data. Both `android/tools/make_asset.py`
+    and the Gradle task `generateGameAsset` were updated to the new `<!--@THREE@-->` placeholder. The Gradle task could
+    not be run here (same limitation as before).
+* Check: the APK page cold-started with the CPU slowed down 6× (phone-like): the start-up screen was on screen after
+  0.37 s, the progress changed 10 → 40 → 65 → 75 → 100 %, then the menu opened, with no errors. First start with a
+  Japanese locale opens the language screen in Japanese. Full regression passed after the change: desktop / phone /
+  landscape journeys, dialogs, continue, lessons, menu scroll, photo-mode translations, offline APK page with 0 requests.

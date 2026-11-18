@@ -22,11 +22,11 @@ link_css = link_css[:link_css.index('>') + 1]
 assert link_pre in html
 html = html.replace(link_pre, '').replace(link_css, '<style>' + ''.join(rules) + '</style>')
 
-# 2) three.js r128 inline
-cdn = '<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>'
-assert cdn in html
+# 2) three.js r128 inline, as data: the page's start-up script runs it after the loading screen has been painted
+mark = '<!--@THREE@-->'
+assert mark in html, 'three.js placeholder not found in game.html'
 bridge = "<script>window.IS_APK = true;</script>\n"
-html = html.replace(cdn, bridge + '<script>' + three + '</script>')
+html = html.replace(mark, bridge + '<script type="text/plain" id="er-three">' + three + '</script>')
 os.makedirs(os.path.dirname(dst), exist_ok=True)
 open(dst, 'w', encoding='utf-8').write(html)
 print('asset written:', dst, len(html.encode('utf-8')), 'bytes')
