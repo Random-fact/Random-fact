@@ -584,3 +584,43 @@ bitmap textures except the existing window textures), same mechanics, cameras, t
 * Photo mode: on the first frame after switching to it the free camera was still at the world origin (it was placed
   after it had been used); anything measuring distance from the camera saw it there (e.g. birds were removed). The camera
   is now placed before use.
+* Console warnings removed: `vertexColors` passed as undefined and `toNonIndexed()` on already non-indexed templates.
+### Graphics settings
+* The four tiers (Low / Medium / High / Ultra, plus Auto by device with frame-rate adaptation) already scaled draw
+  distance, fog, shadows (off / 1024 / 2048 / 4096), tree density, scene detail, particles, precipitation, window
+  texture resolution, anisotropy, lighting model, traffic, AI trains, passengers and clouds. New knobs tied to them:
+  detailed-vegetation distance and ground cover, car-paint and train reflections (off on Low), bird counts, per-floor
+  balconies (High+), roof clutter (Medium+).
+
+### Checks (SwiftShader software rendering in headless Chromium; no phone or GPU was available)
+* Visual: tree close-ups per species and biome; car showroom (16 types, both rows) with the instanced wheels; live
+  traffic: wheel instances = 2 × axles of every car, spin follows the speed; bird close-up of every species and
+  flocks over water/fields; train showroom (classic, high-speed, freight, steam: front, side, bogie views); people
+  line-up front and back; time of day (06:12, 12:00, 18:54, 22:30) in the country and in a city.
+* Performance, High, same seed and positions, AI trains off, after 2.6 s per view (counts include the far land pass):
+  triangles −9 % … +66 % per view against the version before this work (desert/sakura views about the same; forest
+  views gain the most: in an autumn forest about +37 % triangles per loaded chunk), draw calls −12 … +24 per view.
+  Part of the spread is how many chunks had been built at that moment (it differs between runs). Low tier: 61–157 k
+  triangles per view. CPU per frame in this harness stays at 1–2 ms; chunk build time 15–23 ms (unchanged). Real GPU
+  frame times could not be measured here.
+* Memory: JS heap 78 MB vs 69 MB in the same session before the work; long run of 354 km: heap steady at 111 MB,
+  geometries 86–155 and textures 14–15 with no growth.
+* Regression, all passed with no page errors (the only console error is the blocked web-font request offline):
+  boot/desktop/phone/landscape scenarios; HUD and menus at 8 screen sizes (no overlaps, sheets close); dialogs at
+  3 sizes; continue/save; quick menu pausing; menu scroll memory; photo-mode texts in 10 languages; stress jumps over
+  130 km; events (balloons, meteorite, retro train, eclipse) with AI steam and freight trains.
+* `modes.js`, an old test for the earlier menu layout, times out on its first click on both the previous and the
+  current version (it is out of date, not a regression).
+* APK rebuilt (offline test build, signed, `apksigner verify` OK): served like the app's asset loader it boots, plays
+  the theme and makes no network request, no errors. Standalone page: boots offline, music plays, no errors.
+
+### Not done / known limits
+* No new bitmap textures or imported 3D models: everything is still generated geometry with vertex colours (the
+  game's style). Real PBR materials, normal maps or photo textures would need asset files that are not in the project.
+* Trains have no level of detail: the new small parts (gaskets, buffers, ladders) are drawn at every distance.
+* Road vehicles do not steer their front wheels or lean; cars standing in car parks keep their older simple shapes.
+* Birds do not land on trees or wires (ground flocks only); no flocks crossing exactly over the line on purpose.
+* People: no new animations (sitting, phone, waving); faces are not modelled.
+* Lighting, weather, meteors, volcano, rockets, lightning and fog were reviewed in screenshots only and left as they
+  were (they already had their own systems); no bloom or post-processing was added.
+* Not tested on a phone or a desktop GPU: frame rates on real devices are unknown.
