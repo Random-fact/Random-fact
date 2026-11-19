@@ -670,3 +670,24 @@ bitmap textures except the existing window textures), same mechanics, cameras, t
 * Not changed: in a city the cross streets still end at the street along the line (T-junctions) on both sides; roads
   still end 3.3 km out at the edge of the detailed land; on the inner side of tight curves (radius 620–3200 m) the far
   part of a road can come back closer to the line (it never reaches it); not tested on a phone.
+
+## Update 19 Nov 2026 (14): camera look — natural axes, horizontal inversion, full turns
+* One convention for every camera: the view follows the finger or mouse — drag up to look up, drag right to look
+  right (before, the cab, carriage-window, roof, rear, walking and photo cameras worked the other way round: drag up
+  looked down and drag right turned left, while the chase and free cameras already followed the finger). The gamepad's
+  right stick follows the same rule.
+* Settings → Controls: "Invert camera vertically" (as before) and new "Invert camera horizontally", both off by
+  default, translated in all 10 languages. A vertical inversion saved by an older version meant the opposite, so older
+  saves start from the new default once.
+* Full turns: the cab, roof, rear, carriage-window and walking cameras had their turn limited (±171° in the cab, ±180°
+  on the roof, at the rear and walking, ±80° at the carriage window); now they turn all the way round in either
+  direction without stopping, and look up / down to ±83° (was 46–69°). The chase, free and photo cameras keep turning
+  without limit as before.
+* The row of the carriage-window camera is left free of passengers (turning round, a face right beside the camera
+  filled the view).
+* Check (simulated drags in every camera, default and with both inversions): drag up raises the view and drag right
+  turns it right in all 8 look cameras; with the inversions both flip; 26 drags to the right turn every camera
+  536–969° continuously. Views looking backwards in the cab (classic and high-speed: rear wall, door, seats) and across
+  the carriage. Settings tab shows both options (Ukrainian, English). Regression: boot desktop / phone, HUD at 8
+  sizes, quick menu, continue/save, photo-mode texts — no page errors. APK and standalone page rebuilt and checked
+  offline. Not tested on a phone.
