@@ -624,3 +624,41 @@ bitmap textures except the existing window textures), same mechanics, cameras, t
 * Lighting, weather, meteors, volcano, rockets, lightning and fog were reviewed in screenshots only and left as they
   were (they already had their own systems); no bloom or post-processing was added.
 * Not tested on a phone or a desktop GPU: frame rates on real devices are unknown.
+
+## Update 19 Nov 2026 (13): previous trees back; roads without breaks or false crossings
+### Trees
+* At the player's request the new tree models of update (12) are removed and the previous ones are back, exactly as
+  they were (same code, in the same chunk mesh, casting shadows as before). The grass, ferns, reeds and dry shrubs next
+  to the line stay (they sway in the wind and are shown within 250 / 330 / 380 / 480 m by quality tier).
+### Roads that seemed to cross the rails without a level crossing (cause and fix)
+* Villages drew a short lane from the village street to 12 m from the track every 78 m, on both sides at the same place:
+  pairs of road stubs facing each other across the tracks. Removed: the only road to the tracks is the level crossing's.
+  Towns keep short streets between their inner and outer streets, staggered between the two sides (39 m apart), and
+  houses keep off them.
+* The roads that leave a village, town or industrial area also came in pairs facing each other at each end. Now each
+  end has one exit on each side of the line, 150 m apart along it (156 m in industrial areas); the street of that side
+  runs on to it (`Rail.exits`, used by the scenery, the road network and the traffic alike). An exit that would run
+  through an engine depot moves out beyond it.
+* Check over 5 worlds (260 settlements, 1040 exits): no pair of exits closer than 140 m, none on a depot, no road start
+  facing another across the line except at level crossings and bridges. Winding roads never come within 15 m of the
+  track (3 worlds, every road).
+### Roads broken into dashes (cause and fix)
+* The rendered ground is a mesh of rows every 8 m along the line and columns from 2 m to 500 m apart; roads ran in
+  straight pieces of 12–40 m between points on that mesh, so wherever the ground folded between two points the road
+  went under it: measured in two worlds, ~32 % of the road pieces sank partly under the ground (by up to 164 m where a
+  long piece cut through a ridge).
+* Now: pieces are at most 12 / 24 / 32 m of real length (near / middle / far), and within 1 km of the line every piece
+  is split exactly where its centre or an edge crosses a row, a column or a cell diagonal, so it lies on the ground
+  plane by plane; further out each edge and the centre are lifted only where the ground rises above the straight line
+  (average lift 0.3 m). Result: 1–5 % of pieces touch the ground somewhere (mostly by centimetres), 0.4–0.9 % by more
+  than 0.3 m, all 1–3 km away.
+* Road and street surfaces (winding roads, crossings, village / town / city streets, exit roads) use their own material
+  with a depth offset, so they stay in front of the ground at any distance; before, beyond ~600 m the depth buffer could
+  not separate the 7 cm between road and ground and roads flickered into dashes.
+* Cost: road surfaces 5–18 k triangles per view (High), one extra draw call per chunk; chunk build 21 → 27 ms on
+  average over 12 chunks (roads ~4 ms per road, the rest grass and town balconies), built in the background.
+* Views checked: top-down over 6 settlement ends, high oblique views over a village, a town and a forest region
+  (like the cinematic camera), close views at crossings.
+* Not changed: in a city the cross streets still end at the street along the line (T-junctions) on both sides; roads
+  still end 3.3 km out at the edge of the detailed land; on the inner side of tight curves (radius 620–3200 m) the far
+  part of a road can come back closer to the line (it never reaches it); not tested on a phone.
