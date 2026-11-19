@@ -1311,7 +1311,7 @@ Object.assign(Rail, {
 /* ===== Geometry builder, shared materials, textures ===== */
 const TPL = {};
 function mkTpl(g) {
-  g = g.toNonIndexed();
+  if (g.index) g = g.toNonIndexed();
   return { p: g.attributes.position.array, n: g.attributes.normal.array, uv: g.attributes.uv.array, c: g.attributes.position.count };
 }
 function initTemplates() {
@@ -1353,6 +1353,9 @@ class Builder {
     }
     P.length = N.length = C.length = ip; U.length = iu;
   }
+  /* vegetation: like add(), plus wind data in uv: x = sway weight (0 at the ground, 1 at the top of the plant), y = phase */
+  addV(t, x, y, z, sx, sy, sz, yaw, pitch, col, gy, H, ph) { const i0 = this.p.length / 3, j0 = this.u.length; this.add(t, x, y, z, sx, sy, sz, yaw, pitch, col); const pa = this.p.a, ua = this.u.a, n = this.p.length / 3 - i0;
+    for (let i = 0; i < n; i++) { const w = Math.max(0, Math.min(1, (pa[(i0 + i) * 3 + 1] - gy) / H)); ua[j0 + i * 2] = w * w * (1.2 - .2 * w); ua[j0 + i * 2 + 1] = ph; } }
   aabb(x0, x1, y0, y1, z0, z1, col, us, vs) { this.add(TPL.box, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, x1 - x0, y1 - y0, z1 - z0, 0, 0, col, us, vs); }
   quad(a, b, c, d, col, up) { // 4 world points, two triangles, flat normal (up: force +Y facing)
     const [r, g, bl] = typeof col === 'number' ? hexRGB(col) : col;
@@ -1376,6 +1379,7 @@ class Builder {
 
 /* ===== Materials & textures ===== */
 const MAT = {};
+const WINDU = { value: new THREE.Vector3(0, .15, 0) };   /* x: time, y: sway amplitude at a plant's top (m) */
 /* height fog for every built-in material: the haze is dense near the valley floor and thins out upwards (exponential layer,
    integrated along the line of sight), so the ground melts into the distance as before while mountain peaks, towers and
    distant ranges stay visible above it. FOGHB = (base height, scale height, unused), shared by all materials. */
@@ -1424,6 +1428,9 @@ function initMaterials() {
   MAT.cabGlass = new THREE.MeshBasicMaterial({ color: 0xa9c6d8, transparent: true, opacity: .075, depthWrite: false, side: THREE.DoubleSide }); /* the single glass layer of each cab window */
   MAT.build = new THREE.MeshLambertMaterial({ vertexColors: true, map: wt, emissive: 0xffffff, emissiveMap: we, emissiveIntensity: 0 });
   MAT.emis = new THREE.MeshBasicMaterial({ vertexColors: true });
+  /* vegetation sways in the wind: tops more than lower parts, each plant with its own phase (data in uv, see Builder.addV) */
+  MAT.veg = new THREE.MeshLambertMaterial({ vertexColors: true }); MAT.veg.defines = { OBJ_FADE: '' };
+  MAT.veg.onBeforeCompile = sh => { sh.uniforms.uWind = WINDU; sh.vertexShader = sh.vertexShader.replace('void main() {', 'uniform vec3 uWind;\nvoid main() {').replace('#include <begin_vertex>', '#include <begin_vertex>\n\tif (uv.x > 0.0) { float ph = uv.y * 6.2832; transformed.x += (sin(uWind.x * 1.7 + ph) + .35 * sin(uWind.x * 4.3 + ph * 2.0)) * uv.x * uWind.y; transformed.z += (cos(uWind.x * 1.3 + ph * 1.3) + .3 * sin(uWind.x * 3.7 + ph)) * uv.x * uWind.y * .75; }'); };
   for (const m of [MAT.lit, MAT.build, MAT.emis]) m.defines = { OBJ_FADE: '' };
   MAT.lamp = new THREE.MeshBasicMaterial({ color: 0x554a30 });
   MAT.flash = new THREE.MeshBasicMaterial({ color: 0x660000 });
@@ -1597,7 +1604,7 @@ const CS = 200, RSTEP = 8, NR = 25;
 /* terrain columns (lateral offsets): dense around the double-track formation so that ballast shoulders, slopes and retaining walls stay crisp */
 const UC = (() => { const R = [0, 1.8, 3.4, 4.6, 7, 10, 14, 20, 28, 38, 52, 70, 94, 125, 165, 225, 305, 400, 510, 640, 800, 1000, 1250, 1650, 2000, 2400, 2900, 3400];  /* mid-distance columns at most ~250 m apart (lakes keep their shape); the last three: far ground under volcanoes and the spaceport */ return [...R.slice().reverse().map(d => -U2 - d), BEDC, ...R]; })();
 const NC = UC.length;
-const QL = { tree: 1, shadow: 0, ahead: 8, precip: 1, fx: 1, detail: 2, fog: 1, traffic: 1, ai: 4, beam: 1, pax: 1, clouds: .88 }; // live quality knobs (set by Quality)
+const QL = { vegLod: 380, tree: 1, shadow: 0, ahead: 8, precip: 1, fx: 1, detail: 2, fog: 1, traffic: 1, ai: 4, beam: 1, pax: 1, clouds: .88 }; // live quality knobs (set by Quality)
 
 function electrified(s) { if (typeof G !== 'undefined' && G.train && G.train.type === 'hs') return Rail.bio(s).tun < .4; const z = Rail.zoneAt(s); return z.kind === 'station' || z.kind === 'city' || z.kind === 'industrial' || vn1(s / 9000, Rail.seed + 31) > .62; }
 
@@ -1744,7 +1751,7 @@ class Chunk {
      lazy = false builds everything at once (start, teleport, switch flip next to the train) */
   constructor(ci, lazy) {
     this.ci = ci; this.s0 = ci * CS; this.s1 = this.s0 + CS; this.group = new THREE.Group(); this.dyn = []; this.gen = typeof WorldGen !== 'undefined' ? WorldGen.gen : 0;
-    this.B = { lit: new Builder(), build: new Builder(), emis: new Builder(), trk: new Builder(), glow: [] }; this.stage = 0; this.done = false;
+    this.B = { lit: new Builder(), build: new Builder(), emis: new Builder(), trk: new Builder(), veg: new Builder(), vegLo: new Builder(), glow: [] }; this.stage = 0; this.done = false;
     if (!lazy) while (!this.done) this.step();
   }
   step() {
@@ -1757,6 +1764,9 @@ class Chunk {
       default: {
         const add = (bd, mat, sh) => { const m = bd.build(mat, sh); if (m) { this.group.add(m); } };
         add(this.B.lit, MAT.lit, QL.shadow > 0); add(this.B.build, MAT.build, QL.shadow > 0); add(this.B.emis, MAT.emis, false); add(this.B.trk, MAT.lit, false);
+        /* vegetation: detailed plants near the camera, simple crowns further away (WorldGen.lod switches them by distance) */
+        this.vegHi = this.B.veg.build(MAT.veg, QL.shadow > 0); this.vegLo = this.B.vegLo.build(MAT.veg, false); if (this.vegHi) this.group.add(this.vegHi); if (this.vegLo) { this.vegLo.visible = false; this.group.add(this.vegLo); }
+        { const c = Rail.pose(this.s0 + CS / 2, {}); this.cx = c.x; this.cz = c.z; }
         const gm = GlowPts.build(this.B.glow); if (gm) this.group.add(gm);
         /* floating origin: vertices are stored relative to the chunk origin, so float32 precision stays at millimetres
            even hundreds of kilometres from the start (no shimmering rails or terrain after an hour of driving) */
@@ -1941,6 +1951,17 @@ class Chunk {
       const vlanes = vz ? (vz.sk === 'town' || Rail.town(vz).pop > 4000 ? [-80, -34, 34, 80] : [-30, 30]) : null;
       for (let u = -250; u <= 250; u += 11) {
         const au = Math.abs(u); if ((vlanes && vlanes.some(ul => Math.abs(u - ul) < 25)) || bedD(u) < 10 || (b.dep > .05 && u < 4 && u > b.depU - 40) || (road && au < 75) || (au > 55 && Roads.near(s, u, 13)) || (b.stn > .1 && au < 70) || (b.tin > -90 && Math.abs(u - TUN.uc) < 40) || (b.jz && bedD(u - b.ju) < 10)) continue;
+        /* ground cover next to the line: grass tufts (with flowers in meadows), ferns in forests, reeds by the water, dry shrubs in
+           arid land; detailed vegetation only (it is not seen from far away) */
+        if (au < 42 && QL.detail > 0 && b.urban < .2 && !b.stn) { const V = this.B.veg; for (let q = 0; q < 2; q++) { const rq = H(s | 0, u * 3 + q, sd + 90); if (rq > .55) continue;
+            const s2 = s + (H(s | 0, u * 5 + q, sd + 91) - .5) * 10, u2 = u + (H(s | 0, u * 7 + q, sd + 92) - .5) * 10; if (bedD(u2) < 7) continue; const g = meshH(s2, u2); if (g < .4) continue; const P2 = {}; ptAt(s2, u2, P2);
+            const ph = rq * 7.1, wet = g < 2.2 && b.lw > .3, kind2 = b.arid > .5 ? 'dry' : wet ? 'reed' : b.forest > .5 ? 'fern' : 'grass';
+            if (kind2 === 'grass') { const gcol = b.gold > .3 ? [.7, .62, .3] : b.snow > .5 ? [.66, .68, .6] : [.3 + rq * .12, .56 + rq * .08, .18];
+              for (let t = 0; t < 2; t++) V.addV(TPL.cone, P2.x + (t - .5) * .36, g - .08, P2.z + ((t * 7) % 3 - 1) * .24, .38, .35 + rq * .4, .38, t, 0, gcol, g, 1, ph);
+              if (b.meadow > .3 && rq < .25) { const fc = [[.95, .3, .3], [.98, .88, .25], [.95, .95, .98], [.6, .4, .9]][Math.floor(rq * 16) % 4]; V.addV(TPL.ico, P2.x + .3, g + .55, P2.z, .16, .12, .16, 0, 0, fc, g, 1, ph); } }
+            else if (kind2 === 'fern') { for (let t = 0; t < 4; t++) V.addV(TPL.cone, P2.x, g - .05, P2.z, .9, .55, .25, t * .8 + rq, .7, [.12, .32, .1], g, .8, ph); }
+            else if (kind2 === 'reed') { for (let t = 0; t < 5; t++) V.addV(TPL.cone, P2.x + (t - 2) * .18, g - .1, P2.z + ((t * 3) % 5 - 2) * .14, .1, 1.6 + rq, .1, 0, 0, [.42, .46, .2], g, 2, ph); }
+            else V.addV(TPL.ico, P2.x, g + .15, P2.z, .7, .45, .7, rq * 6, 0, [.5, .44, .28], g, 1, ph); } }
         const hs = H(s | 0, u | 0, sd + 40); if (hs > dens * (au > 120 ? .45 : 1)) continue;
         const ss = s + (H(s | 0, u | 0, sd + 41) - .5) * 10, uu = u + (H(s | 0, u | 0, sd + 42) - .5) * 10;
         const x = p.x - c * uu + sn * (ss - s) * 0, z = p.z + sn * uu + c * (ss - s) * 0;
@@ -1978,48 +1999,51 @@ class Chunk {
         const tall = fl === 'evergreen' || fl === 'mountains' ? 1.35 : fl === 'alpine' ? .8 : 1, H2 = ht * tall;
         const autumn = b.aut > H(s | 0, u | 0, sd + 61) && kind !== 'spruce' && kind !== 'pine' && kind !== 'fir' && kind !== 'cherry';
         const ap = [[.86, .62, .12], [.9, .45, .1], [.76, .2, .1], [.56, .31, .12], [.72, .56, .16]][Math.floor(H(s | 0, u | 0, sd + 62) * 5)];
-        if (kind === 'spruce') { /* spruce: 3 tiers on a short visible trunk */
-          const w = H2 * .34, gc = [.06 + j + sw, .2 + j + sw, .11 + j + sw], y = gy + .6 + H2 * .1;
-          L.add(TPL.boxB, x, gy, z, .34, H2 * .18 + .9, .34, 0, 0, tc);
-          L.add(TPL.cone, x, y, z, w, H2 * .5, w, 0, 0, gc); L.add(TPL.cone, x, y + H2 * .3, z, w * .72, H2 * .42, w * .72, 0, 0, gc);
-          if (QL.detail > 1) L.add(TPL.cone, x, y + H2 * .56, z, w * .45, H2 * .34, w * .45, 0, 0, gc);
-        } else if (kind === 'fir') { /* fir: tall and narrow, four tiers */
-          const w = H2 * .24, gc = [.05 + j + sw, .17 + j + sw, .12 + j + sw], y = gy + .6 + H2 * .08;
-          L.add(TPL.boxB, x, gy, z, .3, H2 * .14 + .9, .3, 0, 0, tc);
-          for (let t = 0; t < (QL.detail > 1 ? 4 : 3); t++) L.add(TPL.cone, x, y + H2 * .22 * t, z, w * (1 - t * .2), H2 * .4, w * (1 - t * .2), 0, 0, gc);
-        } else if (kind === 'pine') { /* pine: tall bare reddish trunk, flat crown */
-          const w = H2 * .42, gc = [.1 + j + sw, .26 + j + sw, .13 + j * .5 + sw];
-          L.add(TPL.boxB, x, gy, z, .38, H2 * .72 + .6, .38, 0, 0, [.42, .25, .15]);
-          L.add(TPL.ico, x, gy + .6 + H2 * .72, z, w, H2 * .32, w, k * 6, 0, gc);
-          if (QL.detail > 1) L.add(TPL.ico, x + w * .2, gy + .6 + H2 * .6, z - w * .15, w * .62, H2 * .22, w * .62, k * 4, 0, gc);
-        } else if (kind === 'cherry') { /* cherry in bloom: dark trunk, wide crown of three pink / white lobes */
-          const hh = ht * .62, w = hh * .95, pal = [[1, .74, .84], [.99, .84, .9], [.97, .92, .95], [.95, .62, .76]], cc = pal[Math.floor(k * 4)], ty = gy + .6 + hh * .42;
-          L.add(TPL.boxB, x, gy, z, .34, hh * .5 + .6, .34, k * 6, .06, [.3, .2, .18]);
-          L.add(TPL.ico, x, ty + w * .28, z, w, w * .58, w, k * 6, 0, cc);
-          if (QL.detail > 0) L.add(TPL.ico, x + w * .36, ty + w * .14, z - w * .2, w * .64, w * .44, w * .64, k * 4, 0, [cc[0], cc[1] * .96, cc[2] * .98]);
-          if (QL.detail > 1) L.add(TPL.ico, x - w * .32, ty + w * .18, z + w * .26, w * .6, w * .42, w * .6, k * 5, 0, [cc[0] * .98, Math.min(1, cc[1] * 1.04), Math.min(1, cc[2] * 1.02)]);
-        } else if (kind === 'willow') { /* willow by the water: a wide hanging curtain under a dome */
-          const w = ht * .5, cc = [.42 + j, .56 + j, .22];
-          L.add(TPL.boxB, x, gy, z, .45, ht * .45 + .6, .45, 0, 0, [.33, .27, .2]);
-          L.add(TPL.cone, x, gy + 1.4, z, w * 1.15, ht * .8, w * 1.15, k * 6, 0, [cc[0] * .9, cc[1] * .93, cc[2]]);
-          L.add(TPL.ico, x, gy + ht * .72, z, w * .9, w * .5, w * .9, k * 6, 0, cc);
-        } else if (kind === 'birch') { /* birch: white trunk, light airy crown */
-          const w = ht * .36, cc = autumn ? [.88, .72 + j, .2] : [.36 + j, .56 + j, .2];
-          L.add(TPL.boxB, x, gy, z, .26, ht * .78 + .6, .26, 0, 0, [.88, .87, .82]);
-          L.add(TPL.ico, x, gy + .6 + ht * .72, z, w, ht * .46, w, k * 6, 0, cc);
-        } else if (kind === 'poplar') { /* poplar: tall columnar crown */
-          const w = ht * .26, cc = autumn ? [.82, .68, .16] : [.18 + j, .4 + j, .12];
-          L.add(TPL.boxB, x, gy, z, .34, ht * .3 + .6, .34, 0, 0, tc);
-          L.add(TPL.ico, x, gy + .6 + ht * .78, z, w, ht * 1.05, w, k * 6, 0, cc);
-        } else if (kind === 'bush') { /* undergrowth bush, no trunk */
-          const w = 1.6 + k * 2.2;
-          L.add(TPL.ico, x, gy + .6 + w * .25, z, w, w * .7, w, k * 6, 0, autumn ? [ap[0] * .85, ap[1] * .85, ap[2]] : [.15 + j, .33 + j, .11]);
-        } else { /* oak / maple / lime: broad crown of two lobes on a stout trunk (red Japanese maple in the cherry regions) */
-          const w = ht * .6, cc = kind === 'maple' ? [.78, .18 + j, .12] : autumn ? [ap[0] + j * .5, ap[1] + j * .5, ap[2]] : [.17 + j, .38 + j, .1], ty = gy + .6 + ht * .4;
-          L.add(TPL.boxB, x, gy, z, .5, ht * .5 + .6, .5, 0, 0, [.29 + j, .21, .14]);
-          L.add(TPL.ico, x, ty + w * .36, z, w, w * .82, w, k * 6, 0, cc);
-          if (QL.detail > 1) L.add(TPL.ico, x + w * .28, ty + w * .62, z + w * .1, w * .62, w * .55, w * .62, k * 3, 0, [Math.min(1, cc[0] * 1.08), Math.min(1, cc[1] * 1.08), cc[2]]);
-        }
+        /* every plant is drawn twice: detailed (crowns of several lobes shaded darker below / lighter on top, branches, tiers)
+           into B.veg with a level of detail by distance from the line, and simple into B.vegLo for when the chunk is far away */
+        const ph = H(s | 0, u | 0, sd + 77), lodN = Math.min(QL.detail, au < 45 ? 2 : au < 110 ? 1 : 0);   /* low quality: simple plants only; medium: up to the middle level */
+        const tree = (V, lod) => {
+          const Ht = Math.max(2, H2) + 1.5, lobe = (cx, cy, cz, w, h, col, rot) => V.addV(TPL.ico, cx, cy, cz, w, h, w, rot, 0, col, gy, Ht, ph);
+          const shade = (c, f) => [Math.min(1, c[0] * f), Math.min(1, c[1] * f), Math.min(1, c[2] * f)];
+          const crown = (cx, cy, cz, w, h, col, n) => { lobe(cx, cy, cz, w, h, col, k * 6); for (let i = 1; i < n; i++) { const a = k * 6 + i * 2.39, fr = ((i * 7.3 + k * 10) % 1), r = w * (.28 + .14 * fr), up = ((i % 3) - 1) * h * .2, f = .52 + .22 * ((i * 3.7 + k * 5) % 1); lobe(cx + Math.cos(a) * r, cy + up, cz + Math.sin(a) * r, w * f, h * f * .92, shade(col, up < 0 ? .84 : up > 0 ? 1.09 : .97), k * 4 + i); } };
+          const trunk = (h, w, col) => { if (lod === 2) V.addV(TPL.cyl, x, gy, z, w * 1.05, h, w * 1.05, 0, 0, col, gy, Ht, ph); else V.addV(TPL.boxB, x, gy, z, w, h, w, k * 6, 0, col, gy, Ht, ph); };
+          const branches = (y, w, col) => { if (lod < 2) return; for (const a of [k * 6, k * 6 + 2.5]) V.addV(TPL.box, x + Math.sin(a) * w * .22, y, z + Math.cos(a) * w * .22, .14, .14, w * .5, a, .65, col, gy, Ht, ph); };
+          if (kind === 'spruce' || kind === 'fir') { /* conifers: tiers turned against each other, darker below; spruce wider, fir slimmer and taller */
+            const fir = kind === 'fir', w = H2 * (fir ? .25 : .34), gc = fir ? [.05 + j + sw, .17 + j + sw, .12 + j + sw] : [.06 + j + sw, .2 + j + sw, .11 + j + sw], y = gy + .6 + H2 * .09, n = lod === 2 ? (fir ? 4 : 3) : lod === 1 ? 3 : 2;
+            trunk(H2 * .16 + .9, .34, tc);
+            for (let t = 0; t < n; t++) { const f = t / Math.max(1, n - 1), wf = (1 - f * (fir ? .72 : .66)) * (.94 + .12 * ((t * 3.1 + k * 7) % 1)); V.addV(TPL.cone, x + (lod === 2 ? Math.sin(k * 9 + t) * .15 : 0), y + H2 * (fir ? .76 : .58) * t / Math.max(1, n - 1), z, w * wf, H2 * (.46 - f * .1), w * wf, k * 6 + t * .9, 0, shade(gc, .84 + .2 * f), gy, Ht, ph); }
+          } else if (kind === 'pine') { /* pine: tall bare reddish trunk, flat clustered crown */
+            const w = H2 * .42, gc = [.1 + j + sw, .26 + j + sw, .13 + j * .5 + sw], ty = gy + .6 + H2 * .72;
+            trunk(H2 * .72 + .6, .38, [.42, .25, .15]); branches(ty - H2 * .08, w, [.38, .23, .14]);
+            crown(x, ty, z, w, H2 * .3, gc, lod === 2 ? 3 : lod === 1 ? 2 : 1);
+          } else if (kind === 'cherry') { /* cherry in bloom: dark trunk and branches, wide crown of pink / white lobes */
+            const hh = ht * .62, w = hh * .95, pal = [[1, .74, .84], [.99, .84, .9], [.97, .92, .95], [.95, .62, .76]], cc = pal[Math.floor(k * 4)], ty = gy + .6 + hh * .42;
+            trunk(hh * .5 + .6, .34, [.3, .2, .18]); branches(ty, w, [.3, .2, .18]);
+            crown(x, ty + w * .26, z, w, w * .56, cc, lod === 2 ? 4 : lod === 1 ? 2 : 1);
+          } else if (kind === 'willow') { /* willow by the water: a dome with a hanging curtain and strands */
+            const w = ht * .5, cc = [.42 + j, .56 + j, .22];
+            trunk(ht * .45 + .6, .45, [.33, .27, .2]);
+            V.addV(TPL.cone, x, gy + 1.4, z, w * 1.15, ht * .8, w * 1.15, k * 6, 0, shade(cc, .88), gy, Ht, ph); lobe(x, gy + ht * .72, z, w * .9, w * .5, cc, k * 6);
+            if (lod === 2) for (let i = 0; i < 4; i++) { const a = k * 6 + i * 1.57; V.addV(TPL.cone, x + Math.cos(a) * w * .78, gy + .9, z + Math.sin(a) * w * .78, w * .32, ht * .62, w * .32, a, 0, shade(cc, .8 + i * .05), gy, Ht, ph); }
+          } else if (kind === 'birch') { /* birch: white trunk with dark marks, light airy crown */
+            const w = ht * .36, cc = autumn ? [.88, .72 + j, .2] : [.36 + j, .56 + j, .2];
+            trunk(ht * .78 + .6, .26, [.88, .87, .82]);
+            if (lod === 2) for (let i = 0; i < 3; i++) V.addV(TPL.box, x, gy + 1 + i * ht * .2, z, .28, .08, .28, i, 0, [.15, .14, .13], gy, Ht, ph);
+            crown(x, gy + .6 + ht * .72, z, w, ht * .44, cc, lod === 2 ? 3 : lod === 1 ? 2 : 1);
+          } else if (kind === 'poplar') { /* poplar: tall columnar crown */
+            const w = ht * .26, cc = autumn ? [.82, .68, .16] : [.18 + j, .4 + j, .12];
+            trunk(ht * .3 + .6, .34, tc);
+            lobe(x, gy + .6 + ht * .7, z, w, ht * .95, cc, k * 6); if (lod > 0) lobe(x + w * .15, gy + .6 + ht * 1.05, z - w * .1, w * .7, ht * .5, shade(cc, 1.08), k * 3);
+          } else if (kind === 'bush') { /* undergrowth bush, no trunk */
+            const w = 1.6 + k * 2.2, cc = autumn ? [ap[0] * .85, ap[1] * .85, ap[2]] : [.15 + j, .33 + j, .11];
+            crown(x, gy + .6 + w * .22, z, w, w * .66, cc, lod === 2 ? 3 : lod === 1 ? 2 : 1);
+          } else { /* oak / maple / lime: broad crown of several lobes on a stout trunk with branches (red Japanese maple in the cherry regions) */
+            const w = ht * .6, cc = kind === 'maple' ? [.78, .18 + j, .12] : autumn ? [ap[0] + j * .5, ap[1] + j * .5, ap[2]] : [.17 + j, .38 + j, .1], ty = gy + .6 + ht * .4;
+            trunk(ht * .5 + .6, .5, [.29 + j, .21, .14]); branches(ty + w * .1, w, [.27 + j, .2, .13]);
+            crown(x, ty + w * .38, z, w, w * .8, cc, lod === 2 ? 4 : lod === 1 ? 2 : 1);
+          }
+        };
+        tree(this.B.veg, lodN); tree(this.B.vegLo, 0);
       }
       /* blossom alleys: in stretches of the cherry regions the line runs between two rows of cherry trees */
       if (b.sak > .5 && !road && b.stf < .05 && b.tun < .05 && b.tin < -90 && !b.deck && !b.jz && b.dip < .1 && vn1(s / 900, sd + 64) > .5) for (const ua of [17.5, -U2 - 17.5]) {
@@ -2586,8 +2610,15 @@ const Town = {
     /* balcony columns on the two long facades */
     if (fl >= 3 && r(11) < .8) {
       const nb = Math.max(1, Math.floor(w / 9)), bc = [wc[0] * .72, wc[1] * .72, wc[2] * .74];
-      for (let i = 0; i < nb; i++) for (const sg of [-1, 1]) { const lx = -w / 2 + (i + .5) * (w / nb); this.box(Bl, o, lx, base + fh, sg * (d / 2 + .5), 1.9, (fl - 1) * fh, 1.0, bc); }
+      /* high detail: a slab and a railing (glass or painted metal) on every floor; lower tiers keep the cheap column */
+      const per = QL.detail >= 2 && fl <= 14, rl = r(12) < .5 ? [.42, .5, .56] : [wc[0] * .9, wc[1] * .9, wc[2] * .92];
+      for (let i = 0; i < nb; i++) for (const sg of [-1, 1]) { const lx = -w / 2 + (i + .5) * (w / nb);
+        if (!per) { this.box(Bl, o, lx, base + fh, sg * (d / 2 + .5), 1.9, (fl - 1) * fh, 1.0, bc); continue; }
+        for (let f = 1; f < fl; f++) { const y = base + f * fh; this.box(Bl, o, lx, y - .12, sg * (d / 2 + .5), 2.1, .14, 1.0, bc); this.box(Bl, o, lx, y + .02, sg * (d / 2 + .97), 2.1, .95, .06, rl);
+          for (const e of [-1, 1]) this.box(Bl, o, lx + e * 1.02, y + .02, sg * (d / 2 + .5), .06, .95, .94, rl); } }
     }
+    /* roof clutter on flat roofs: antenna mast and a satellite dish */
+    if (!hipped && QL.detail >= 1 && r(14) < .6) { const ax = (r(15) - .5) * w * .6, az = (r(16) - .5) * d * .5; this.box(Bl, o, ax, hgt, az, .12, 3.2 + r(17) * 2, .12, [.55, .56, .58]); this.box(Bl, o, ax, hgt + 2.6, az, 1.2, .05, .05, [.55, .56, .58]); const p = this.P(o, ax + 1.5, az); Bl.add(TPL.cone, p[0], hgt + .5, p[1], .9, .35, .9, o.yaw, Math.PI * .7, [.8, .8, .82]); }
     /* shops: dark glazing band + awnings on the street sides */
     if (shops) {
       for (const sg of [-1, 1]) { this.box(Bl, o, 0, .2, sg * (d / 2 + .04), w * .94, 2.6, .1, [.12, .16, .2]); const na = Math.max(2, Math.floor(w / 7)); for (let i = 0; i < na; i++) { const c = [[.7, .15, .12], [.15, .35, .55], [.8, .6, .15], [.2, .5, .3]][(i + (r(12) * 9 | 0)) % 4]; this.box(Bl, o, -w / 2 + (i + .5) * w / na, 2.6, sg * (d / 2 + .6), w / na - .8, .12, 1.2, c); } }
@@ -2858,7 +2889,8 @@ const EnvMap = {
 function initTrainMats() {
   if (MH) return;
   EnvMap.init();
-  MH = { head: new THREE.MeshBasicMaterial({ color: 0x222222 }), tail: new THREE.MeshBasicMaterial({ color: 0x330000 }), cabin: new THREE.MeshBasicMaterial({ color: 0x777060 }), door: new THREE.MeshPhongMaterial({ color: 0x2b3f66, specular: 0x222222, shininess: 30 }),
+  MAT.car = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 70, specular: 0x2a2a2a, envMap: EnvMap.tex, combine: THREE.MixOperation, reflectivity: .16 });   /* car paint and glass */
+  MH = { head: new THREE.MeshBasicMaterial({ color: 0x222222 }), tail: new THREE.MeshBasicMaterial({ color: 0x330000 }), cabin: new THREE.MeshBasicMaterial({ color: 0x777060 }), door: new THREE.MeshPhongMaterial({ color: 0x2b3f66, specular: 0x222222, shininess: 30, vertexColors: true }),
     aiHead: new THREE.MeshBasicMaterial({ color: 0xfff6e0 }), aiTail: new THREE.MeshBasicMaterial({ color: 0xff2010 }) };
   MAT.glass.opacity = .2;
   /* lakes and rivers mirror the sky (horizon colour at grazing angles, blue sky when seen from above) */
@@ -3023,6 +3055,19 @@ function buildLoco(opt) {
     for (const x of [-.32, .32]) Geo.cylZ(sh, x, TOP + .02, 8.0, 8.7, .075, [.55, .56, .58], 8);
     for (const z of [-1.0, -.3]) Geo.cylY(sh, 0, z, TOP - .2, TOP + .32, .16, .14, [.12, .12, .13], 8);
     for (let z = -8.6; z < -6; z += .32) sh.aabb(-1.0, 1.0, TOP - .08, TOP + .02, z, z + .16, [.25, .26, .28]);
+    /* rubber gaskets around the engine-room and cab side windows (segmented to follow the narrowing nose), radiator
+       louvres low on the engine-room flanks, a hand rail along the body and a buffer beam with side buffers at the rear */
+    const GK = [.06, .06, .07], gasket = (z0, z1, y0, y1) => { for (const sg of [-1, 1]) {
+      const N = Math.max(1, Math.ceil((z1 - z0) / .9)), bx = (x, ya, yb, za, zb) => sh.aabb(Math.min(sg * (x - .01), sg * (x + .025)), Math.max(sg * (x - .01), sg * (x + .025)), ya, yb, za, zb, GK);
+      for (let i = 0; i < N; i++) { const za = z0 + (z1 - z0) * i / N, zb = z0 + (z1 - z0) * (i + 1) / N, S = sec((za + zb) / 2); bx(Geo.xAt(S, y0), y0 - .06, y0 + .015, za - (i ? 0 : .06), zb + (i < N - 1 ? 0 : .06)); bx(Geo.xAt(S, y1), y1 - .015, y1 + .06, za - (i ? 0 : .06), zb + (i < N - 1 ? 0 : .06)); }
+      for (const z of [z0, z1]) bx(Geo.xAt(sec(z), (y0 + y1) / 2), y0, y1, z - .04, z + .04); } };
+    for (let a = -9; a < 3.6; a += 2.2) gasket(a, Math.min(a + 1.7, 3.6), 2.15, 3.3);
+    gasket(6.4, 9.1, 2.25, 3.35);
+    for (const sg of [-1, 1]) { const x = Geo.xAt(sec(0), 1.3);
+      for (let z = -8.4; z < 3.4; z += .28) sh.aabb(Math.min(sg * (x - .01), sg * (x + .03)), Math.max(sg * (x - .01), sg * (x + .03)), 1.0, 1.62, z, z + .1, [.06, .09, .2]);
+      const xr = Geo.xAt(sec(0), 2.0) + .08; sh.aabb(Math.min(sg * xr, sg * (xr + .04)), Math.max(sg * xr, sg * (xr + .04)), 1.98, 2.02, -9.4, 4.6, GR); for (let z = -9.3; z < 4.7; z += 1.55) sh.aabb(Math.min(sg * (xr - .1), sg * xr), Math.max(sg * (xr - .1), sg * xr), 1.985, 2.015, z - .015, z + .015, GR); }
+    sh.aabb(-1.4, 1.4, .58, 1.02, -10.12, -10, [.42, .1, .08]);
+    for (const x of [-.98, .98]) { Geo.cylZ(sh, x, .84, -10.55, -10, .085, [.14, .14, .15], 8); Geo.cylZ(sh, x, .84, -10.64, -10.55, .19, [.5, .5, .52], 10); }
   }
   g.add(sh.build(MAT.trainBody, true)); const cabMesh = cab.build(MAT.lit); if (cabMesh) g.add(cabMesh); g.add(lens.build(MH.head));
   if (ext) { const sp = new THREE.SpotLight(0xfff0d0, 0, 380, .38, .55, 1.1); return { g, axles, heads: [[-1.0, 1.45, 10.1], [1.0, 1.45, 10.1], [0, 3.38, 10.1]], beam: [0, 1.45, 10.1], spot: null, wipers: [], len: 20 }; }
@@ -3100,7 +3145,20 @@ function buildCar(idx, rr, opt) {
     col: (z, y) => { if (y > YS + RY * .4) return L.roof; for (const bd of bands) if (y >= bd[0] && y < bd[1]) return bd[2]; return L.cream; },
     skip: (z, y) => (y > Y0 && y < Y1 && inWin(z)) || (y > .95 && y < DT && inDoor(z)), glass: gl
   });
-  /* rubber gangway bellows */
+  /* rubber window gaskets (and a drip rail over each window of the classic cars), roof rain gutters, and side buffers
+     with a buffer beam at both ends of the classic cars (high-speed cars have smooth flanks and no buffers) */
+  { const S0 = sec(), GK = opt.hs ? [.11, .12, .14] : [.06, .06, .07], xa = Geo.xAt(S0, Y0), xb = Geo.xAt(S0, Y1), xm = Geo.xAt(S0, (Y0 + Y1) / 2), xg = Geo.xAt(S0, YS - .04);
+    for (const sg of [-1, 1]) {
+      const bx = (x, y0, y1, za, zb, t, c) => sh.aabb(Math.min(sg * (x - .01), sg * (x + t)), Math.max(sg * (x - .01), sg * (x + t)), y0, y1, za, zb, c || GK);
+      for (const c of wc) { const z0 = c - WH, z1 = c + WH;
+        bx(xa, Y0 - .06, Y0 + .015, z0 - .06, z1 + .06, .025); bx(xb, Y1 - .015, Y1 + .06, z0 - .06, z1 + .06, .025);
+        bx(xm, Y0, Y1, z0 - .06, z0 + .015, .025); bx(xm, Y0, Y1, z1 - .015, z1 + .06, .025);
+        if (!opt.hs) bx(xb, Y1 + .12, Y1 + .16, z0 - .12, z1 + .12, .045, L.roof); }
+      if (!opt.hs) bx(xg, YS - .05, YS + .02, -10.95, 10.95, .045, [L.roof[0] * .7, L.roof[1] * .7, L.roof[2] * .7]);
+    }
+    if (!opt.hs) { const ST = [.14, .14, .15], PL = [.5, .5, .52], BB = [.42, .1, .08];
+      for (const e of [-1, 1]) { const zi = e * 11; b.aabb(-1.32, 1.32, .58, 1.02, Math.min(zi, zi + e * .12), Math.max(zi, zi + e * .12), BB);
+        for (const x of [-.98, .98]) { Geo.cylZ(b, x, .84, Math.min(zi, zi + e * .55), Math.max(zi, zi + e * .55), .085, ST, 8); Geo.cylZ(b, x, .84, Math.min(zi + e * .55, zi + e * .64), Math.max(zi + e * .55, zi + e * .64), .19, PL, 10); } } } }
   /* high-speed cars: full-width outer gangway covers (smooth, almost flush with the body) and bogie skirts */
   const bsec = opt.hs ? () => ({ hw: 1.44, bot: 1.0, top: TOP - .06, ry: RY, tum: .03 }) : () => ({ hw: 1.3, bot: .98, top: 3.5, ry: .55, tum: 0 }), bcol = () => opt.hs ? [.2, .21, .23] : [.13, .13, .15];
   if (opt.hs) for (const sg of [-1, 1]) for (const bz of [-7.8, 7.8]) { const x0 = Math.min(sg * 1.44, sg * 1.5), x1 = Math.max(sg * 1.44, sg * 1.5); sh.aabb(x0, x1, .55, BOT + .05, bz - (bz > 0 ? 2.2 : 2.4), bz - (bz > 0 ? -2.4 : -2.2), L.teal); }
@@ -3112,7 +3170,12 @@ function buildCar(idx, rr, opt) {
   return { g, doors, axles, tails: last ? [[-1, 1.4, -11.1], [1, 1.4, -11.1]] : null };
 }
 const DoorGeoC = {};
-function DoorGeo(h) { const k = h.toFixed(2); if (!DoorGeoC[k]) { DoorGeoC[k] = new THREE.BoxGeometry(.07, h, .66); DoorGeoC[k].shared = true; } return DoorGeoC[k]; }
+/* sliding door leaf: painted panel (vertex colour white = the door material's colour) with a rubber-framed window in its
+   upper half on both faces */
+function DoorGeo(h) { const k = h.toFixed(2); if (!DoorGeoC[k]) { const B = new Builder(), y0 = h * .06, y1 = h / 2 - .12, GL = [.13, .16, .21], GK = [.3, .31, .35];
+    B.aabb(-.035, .035, -h / 2, h / 2, -.33, .33, [1, 1, 1]);
+    for (const sg of [-1, 1]) { B.aabb(Math.min(sg * .035, sg * .039), Math.max(sg * .035, sg * .039), y0 - .035, y1 + .035, -.255, .255, GK); B.aabb(Math.min(sg * .035, sg * .042), Math.max(sg * .035, sg * .042), y0, y1, -.22, .22, GL); }
+    const m = B.build(MAT.lit, false); DoorGeoC[k] = m.geometry; DoorGeoC[k].shared = true; } return DoorGeoC[k]; }
 
 /* free GPU resources of a vehicle / object tree (shared geometries and materials are kept) */
 function disposeTree(root) {
@@ -4012,6 +4075,8 @@ const WorldGen = {
       if (Math.abs(ci - cp) <= 1) { const n = new Chunk(ci); this.chunks.set(ci, n); this.scene.add(n.group); }
     }
   },
+  /* vegetation level of detail: full plants within ~380 m of the camera, simple ones beyond (with hysteresis) */
+  lod(P) { for (const ch of this.chunks.values()) { if (!ch.vegHi || !ch.vegLo) continue; const d = Math.hypot(ch.cx - P.x, ch.cz - P.z), hi = ch.vegHi.visible ? d < QL.vegLod : d < QL.vegLod * .82; ch.vegHi.visible = hi; ch.vegLo.visible = !hi; } },
   flush(s, dir) { for (const ci of this.want(s, dir)) if (!this.chunks.has(ci)) this.take(ci, true); },
   /* loading screen: builds one missing chunk; returns [built so far, total wanted] */
   flushOne(s, dir) { const w = this.want(s, dir); for (const ci of w) if (!this.chunks.has(ci)) { this.take(ci, true); break; } return [w.filter(ci => this.chunks.has(ci)).length, w.length]; }
@@ -4034,10 +4099,15 @@ const Passengers = {
     const lg = new THREE.CylinderGeometry(.08, .062, .84, 7); lg.translate(0, -.42, 0);
     const bg = new THREE.BoxGeometry(.2, .46, .36); bg.translate(0, .23, 0);
     const hg = new THREE.SphereGeometry(.14, 8, 4, 0, TAU, 0, Math.PI / 2);
+    /* variety: long hair falling behind the head, a skirt over the upper legs, a backpack */
+    const hl = new THREE.SphereGeometry(.112, 10, 6); hl.scale(1, 1.75, .6); hl.translate(0, -.1, -.055);
+    const sk = new THREE.CylinderGeometry(.17, .27, .46, 10); sk.scale(1, 1, .75); sk.translate(0, -.23, 0);
+    const pk = new THREE.BoxGeometry(.28, .36, .13); pk.translate(0, .18, 0);
     const M = () => new THREE.MeshLambertMaterial({ color: 0xffffff });
     this.body = new THREE.InstancedMesh(tgm, M(), MAXP); this.head = new THREE.InstancedMesh(hd, M(), MAXP); this.hair = new THREE.InstancedMesh(hr, M(), MAXP);
     this.arms = new THREE.InstancedMesh(ag, M(), MAXP * 2); this.legs = new THREE.InstancedMesh(lg, M(), MAXP * 2); this.bags = new THREE.InstancedMesh(bg, M(), MAXP); this.hats = new THREE.InstancedMesh(hg, M(), 40);
-    this.parts = [this.body, this.head, this.hair, this.arms, this.legs, this.bags, this.hats];
+    this.hairL = new THREE.InstancedMesh(hl, M(), MAXP); this.skirt = new THREE.InstancedMesh(sk, M(), MAXP); this.pack = new THREE.InstancedMesh(pk, M(), MAXP);
+    this.parts = [this.body, this.head, this.hair, this.arms, this.legs, this.bags, this.hats, this.hairL, this.skirt, this.pack];
     /* the colour buffer is allocated for the full capacity up front: three.js sizes it from .count at the first setColorAt,
        which is 0 here, and an empty buffer drew every person black */
     for (const m of this.parts) { m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(m.instanceMatrix.count * 3).fill(1), 3); m.frustumCulled = false; m.count = 0; m.castShadow = false; scene.add(m); }
@@ -4050,6 +4120,10 @@ const Passengers = {
     p.sk = pick([[.93, .76, .62], [.87, .68, .53], [.76, .56, .41], [.6, .42, .3], [.42, .29, .2]]); p.bag = !p.work && r() < .32; p.bc = pick([[.15, .15, .17], [.5, .12, .1], [.15, .25, .45], [.4, .35, .3]]);
     p.hc = r() < .07 ? null : pick([[.08, .06, .05], [.18, .11, .07], [.32, .2, .11], [.62, .48, .27], [.55, .55, .55], [.4, .16, .08]]);
     p.ac = p.c.map(v => v * .88);   /* sleeves slightly darker than the front */
+    /* build (slim to heavy), hairstyle, skirt or trousers, backpack */
+    p.bw = pick([.88, .93, 1, 1, 1.05, 1.1, 1.18]); p.long = !!p.hc && r() < .35; p.skirt = !p.work && r() < (p.long ? .4 : .06);
+    if (p.skirt) { p.skc = r() < .5 ? p.lc : pick([[.12, .12, .14], [.45, .14, .16], [.2, .3, .5], [.6, .5, .35], [.32, .36, .26]]); p.lc = r() < .5 ? [.1, .1, .11] : p.sk.map(v => v * .95); }
+    p.pack = !p.work && !p.bag && r() < .18; p.pc = pick([[.12, .12, .14], [.2, .3, .5], [.5, .15, .12], [.25, .35, .22], [.6, .5, .2]]);
     if (p.work) { p.c = [1, .42, .05]; p.ac = [.9, .38, .05]; p.lc = [.15, .18, .3]; }
   },
   /* everyday clothes: muted colours with a few bright ones */
@@ -4140,7 +4214,7 @@ const Passengers = {
     }
     /* nobody on the platforms: the instanced meshes are emptied once and nothing is uploaded until people appear */
     if (!L.length) { if (!this.empty) { for (const m of this.parts) m.count = 0; this.empty = true; } return; } this.empty = false;
-    const M0 = this.M0, M1 = this.M1, M2 = this.M2, col = this.col; let nl = 0, na = 0, nb = 0, nh = 0, nr = 0;
+    const M0 = this.M0, M1 = this.M1, M2 = this.M2, col = this.col; let nl = 0, na = 0, nb = 0, nh = 0, nr = 0, nlh = 0, ns = 0, np = 0;
     for (const p of L) {
       if ((p.st === 'out' || p.st === 'dis') && p.delay > 0) continue;
       if (!p.lc) this.dress(p);
@@ -4148,20 +4222,23 @@ const Passengers = {
       if (p.yt === undefined) p.yt = p.yaw || 0; const dy = Math.atan2(Math.sin((p.yaw || 0) - p.yt), Math.cos((p.yaw || 0) - p.yt)); p.yt += dy * Math.min(1, dt * 6);
       const walk = p.st === 'board' || p.st === 'out' || p.st === 'dis' || p.mv, sw = walk ? Math.sin(p.ph) * .5 : 0, bob = walk ? Math.abs(Math.cos(p.ph)) * .035 : Math.sin(p.t * .7 + p.ph) * .005, h = p.h, yaw = p.yt;
       M0.makeRotationY(yaw); M0.setPosition(p.x, p.y + bob, p.z);
-      M1.makeTranslation(0, .84 * h, 0); M2.makeScale(1, h, 1); M1.multiply(M2); this.body.setMatrixAt(k, M2.multiplyMatrices(M0, M1)); col.setRGB(p.c[0], p.c[1], p.c[2]); this.body.setColorAt(k, col);
+      const bw = p.bw || 1;
+      M1.makeTranslation(0, .84 * h, 0); M2.makeScale(bw, h, bw); M1.multiply(M2); this.body.setMatrixAt(k, M2.multiplyMatrices(M0, M1)); col.setRGB(p.c[0], p.c[1], p.c[2]); this.body.setColorAt(k, col);
       M1.makeTranslation(0, 1.48 * h + .1, 0); this.head.setMatrixAt(k, M2.multiplyMatrices(M0, M1)); col.setRGB(p.sk[0], p.sk[1], p.sk[2]); this.head.setColorAt(k, col);
-      if (p.hc && !p.work) { this.hair.setMatrixAt(nr, M2); col.setRGB(p.hc[0], p.hc[1], p.hc[2]); this.hair.setColorAt(nr, col); nr++; }
+      if (p.hc && !p.work) { this.hair.setMatrixAt(nr, M2); col.setRGB(p.hc[0], p.hc[1], p.hc[2]); this.hair.setColorAt(nr, col); nr++; if (p.long) { this.hairL.setMatrixAt(nlh, M2); this.hairL.setColorAt(nlh, col); nlh++; } }
+      if (p.skirt) { M1.makeTranslation(0, .9 * h, 0); M1.multiply(M2.makeScale(bw, h, bw)); this.skirt.setMatrixAt(ns, M2.multiplyMatrices(M0, M1)); col.setRGB(p.skc[0], p.skc[1], p.skc[2]); this.skirt.setColorAt(ns, col); ns++; }
+      if (p.pack) { M1.makeTranslation(0, 1.02 * h, -.125 * bw - .06); this.pack.setMatrixAt(np, M2.multiplyMatrices(M0, M1)); col.setRGB(p.pc[0], p.pc[1], p.pc[2]); this.pack.setColorAt(np, col); np++; }
       for (const sg of [-1, 1]) {
-        M1.makeRotationX(sw * sg); M1.premultiply(M2.makeTranslation(sg * .095, .84 * h, 0)); M1.multiply(M2.makeScale(1, h, 1)); this.legs.setMatrixAt(nl, M2.multiplyMatrices(M0, M1)); col.setRGB(p.lc[0], p.lc[1], p.lc[2]); this.legs.setColorAt(nl, col); nl++;
+        M1.makeRotationX(sw * sg * (p.skirt ? .6 : 1)); M1.premultiply(M2.makeTranslation(sg * .095 * bw, .84 * h, 0)); M1.multiply(M2.makeScale(.9 + .1 * bw, h, .9 + .1 * bw)); this.legs.setMatrixAt(nl, M2.multiplyMatrices(M0, M1)); col.setRGB(p.lc[0], p.lc[1], p.lc[2]); this.legs.setColorAt(nl, col); nl++;
         /* arms swing against the legs; a hand that holds the suitcase stays down */
         const carry = p.bag && sg > 0, ar = carry ? .05 : -sw * sg * .8;
-        M1.makeRotationX(ar); M1.premultiply(M2.makeTranslation(sg * .235, 1.37 * h, 0)); M1.multiply(M2.makeRotationZ(sg * .07)); M1.multiply(M2.makeScale(1, h, 1)); this.arms.setMatrixAt(na, M2.multiplyMatrices(M0, M1)); col.setRGB(p.ac[0], p.ac[1], p.ac[2]); this.arms.setColorAt(na, col); na++;
+        M1.makeRotationX(ar); M1.premultiply(M2.makeTranslation(sg * .235 * bw, 1.37 * h, 0)); M1.multiply(M2.makeRotationZ(sg * .07)); M1.multiply(M2.makeScale(1, h, 1)); this.arms.setMatrixAt(na, M2.multiplyMatrices(M0, M1)); col.setRGB(p.ac[0], p.ac[1], p.ac[2]); this.arms.setColorAt(na, col); na++;
       }
       if (p.bag) { M1.makeTranslation(.34, 0, walk ? -.25 : 0); this.bags.setMatrixAt(nb, M2.multiplyMatrices(M0, M1)); col.setRGB(p.bc[0], p.bc[1], p.bc[2]); this.bags.setColorAt(nb, col); nb++; }
       if (p.work && nh < 40) { M1.makeTranslation(0, 1.48 * h + .14, 0); this.hats.setMatrixAt(nh, M2.multiplyMatrices(M0, M1)); col.setRGB(1, .9, .15); this.hats.setColorAt(nh, col); nh++; }
       k++;
     }
-    this.body.count = this.head.count = k; this.hair.count = nr; this.arms.count = na; this.legs.count = nl; this.bags.count = nb; this.hats.count = nh;
+    this.body.count = this.head.count = k; this.hair.count = nr; this.arms.count = na; this.legs.count = nl; this.bags.count = nb; this.hats.count = nh; this.hairL.count = nlh; this.skirt.count = ns; this.pack.count = np;
     for (const m of this.parts) { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
   }
 };
@@ -4586,8 +4663,12 @@ const Limits = {
    Vehicles follow one line at a time, keep distance to the leader, stop at red lights and closed level crossings,
    and may turn at intersections. They are spawned out of sight and removed when far away. */
 const VT = {
-  car: { w: .9, len: 4.2, vm: 1, cols: [[.7, .1, .1], [.1, .2, .5], [.85, .85, .85], [.15, .15, .17], [.5, .55, .6], [.1, .4, .25], [.8, .7, .2]] },
-  taxi: { w: .9, len: 4.4, vm: 1, cols: [[.95, .75, .1]] },
+  car: { w: .9, len: 4.6, vm: 1, cols: [[.7, .1, .1], [.1, .2, .5], [.85, .85, .85], [.15, .15, .17], [.5, .55, .6], [.1, .4, .25], [.8, .7, .2]] },
+  hatch: { w: .86, len: 3.9, vm: 1, cols: [[.85, .2, .15], [.92, .92, .9], [.2, .45, .7], [.95, .75, .2], [.35, .38, .4], [.55, .7, .3]] },
+  wagon: { w: .9, len: 4.8, vm: 1, cols: [[.25, .28, .3], [.75, .75, .76], [.15, .25, .4], [.45, .1, .1], [.6, .55, .45]] },
+  suv: { w: .97, len: 4.7, vm: .95, cols: [[.1, .1, .11], [.9, .9, .9], [.35, .4, .42], [.2, .3, .22], [.5, .15, .12]] },
+  pickup: { w: .98, len: 5.3, vm: .95, cols: [[.85, .85, .85], [.15, .2, .35], [.55, .1, .08], [.3, .32, .3]] },
+  taxi: { w: .9, len: 4.6, vm: 1, cols: [[.95, .75, .1]] },
   van: { w: 1, len: 5.4, vm: .95, cols: [[.9, .9, .92], [.2, .3, .5], [.6, .15, .12]] },
   truck: { w: 1.25, len: 8.2, vm: .85, cols: [[.75, .75, .78], [.2, .35, .6], [.8, .45, .1]] },
   semi: { w: 1.25, len: 15.5, vm: .8, cols: [[.9, .9, .9], [.2, .4, .65], [.7, .1, .1]] },
@@ -4599,26 +4680,99 @@ const VT = {
   police: { w: .9, len: 4.6, vm: 1.3, cols: [[.12, .16, .3]] },
   rail: { w: 1, len: 5.2, vm: .8, cols: [[.95, .75, .1]] }
 };
-const GLASS = [.1, .13, .18], TIRE = [.07, .07, .08];
-function vehGeo(type, col) {
-  const b = new Builder(), l = new Builder(), T = VT[type], hw = T.w, L2 = T.len / 2;
-  const wh = (zs, r) => { for (const z of zs) for (const sg of [-1, 1]) b.aabb(Math.min(sg * (hw - .05), sg * (hw + .17)), Math.max(sg * (hw - .05), sg * (hw + .17)), 0, r * 2, z - r, z + r, TIRE); };
-  const head = (y, z, w2) => { l.aabb(-w2 - .15, -w2 + .15, y, y + .16, z, z + .06, [1, .96, .8]); l.aabb(w2 - .15, w2 + .15, y, y + .16, z, z + .06, [1, .96, .8]); l.aabb(-w2 - .15, -w2 + .15, y, y + .16, -z - .06, -z, [.9, .05, .05]); l.aabb(w2 - .15, w2 + .15, y, y + .16, -z - .06, -z, [.9, .05, .05]); };
-  switch (type) {
-    case 'car': case 'taxi': case 'police': {
-      b.aabb(-hw, hw, .35, .95, -L2, L2, col); b.aabb(-hw + .08, hw - .08, .95, 1.42, -L2 * .45, L2 * .3, GLASS); b.aabb(-hw + .12, hw - .12, 1.4, 1.46, -L2 * .45, L2 * .3, type === 'police' ? [.9, .9, .92] : col); wh([-L2 * .62, L2 * .62], .33); head(.5, L2, hw * .7);
-      if (type === 'taxi') b.aabb(-.25, .25, 1.46, 1.66, -.3, .3, [1, .95, .6]); if (type === 'police') { b.aabb(-hw, hw, .35, .5, -L2, L2, [.92, .92, .94]); } break; }
-    case 'van': case 'amb': case 'rail': {
-      const H = type === 'rail' ? 1.5 : 2.3; b.aabb(-hw, hw, .4, H, -L2, L2, type === 'rail' ? col : col); b.aabb(-hw + .08, hw - .08, 1.2, H - .25, L2 - 1.5, L2 + .01, GLASS);
-      if (type === 'amb') { b.aabb(-hw - .01, hw + .01, .8, 1.1, -L2, L2, [.85, .1, .1]); b.aabb(-.4, .4, H, H + .14, L2 - 1.8, L2 - 1.2, [.9, .9, .9]); }
-      if (type === 'rail') { b.aabb(-hw, hw, .4, 1.0, -L2, -L2 * .15, [.7, .55, .1]); } wh([-L2 * .6, L2 * .6], .38); head(.6, L2, hw * .7); break; }
-    case 'truck': { b.aabb(-hw, hw, .5, 2.4, L2 - 2.4, L2, col); b.aabb(-hw + .08, hw - .08, 1.5, 2.2, L2 - 1.3, L2 + .01, GLASS); b.aabb(-hw, hw, .6, 3.2, -L2, L2 - 2.7, [.8, .8, .82]); b.aabb(-hw - .02, hw + .02, 1.2, 1.5, -L2, L2 - 2.7, col); wh([-L2 * .6, -L2 * .3, L2 * .65], .5); head(.8, L2, hw * .7); break; }
-    case 'semi': { b.aabb(-hw, hw, .55, 2.9, L2 - 2.6, L2, col); b.aabb(-hw + .08, hw - .08, 1.7, 2.7, L2 - 1.4, L2 + .01, GLASS); b.aabb(-hw, hw, .9, 3.8, -L2, L2 - 3.2, [.9, .9, .92]); b.aabb(-hw - .02, hw + .02, 1.3, 1.7, -L2, L2 - 3.2, col); wh([-L2 * .85, -L2 * .7, L2 * .35, L2 * .8], .5); head(.9, L2, hw * .7); break; }
-    case 'bus': case 'mini': { const H = type === 'bus' ? 3.2 : 2.5; b.aabb(-hw, hw, .45, H, -L2, L2, col); b.aabb(-hw - .01, hw + .01, 1.35, H - .4, -L2 + .5, L2 - .5, GLASS); b.aabb(-hw + .08, hw - .08, 1.3, H - .3, L2 - .01, L2 + .01, GLASS); b.aabb(-hw + .3, hw - .3, H, H + .18, -L2 * .6, L2 * .1, [.8, .8, .82]); wh([-L2 * .65, L2 * .6], .5); head(.7, L2, hw * .7); break; }
-    case 'tractor': { b.aabb(-.7, .7, .6, 1.3, -L2 + 1.0, L2, col); b.aabb(-.7, .7, 1.3, 2.7, -L2 + .8, -L2 + 2.4, GLASS); b.aabb(-.75, .75, 2.65, 2.75, -L2 + .7, -L2 + 2.5, col); for (const sg of [-1, 1]) { b.aabb(sg * .95 - .22, sg * .95 + .22, 0, 1.5, -L2 + .7, -L2 + 2.2, TIRE); b.aabb(sg * .85 - .12, sg * .85 + .12, 0, .8, L2 - 1.0, L2 - .3, TIRE); } head(.9, L2, .5); break; }
-    case 'fire': { b.aabb(-hw, hw, .5, 2.2, L2 - 2.5, L2, col); b.aabb(-hw + .08, hw - .08, 1.4, 2.0, L2 - 1.4, L2 + .01, GLASS); b.aabb(-hw, hw, .6, 2.8, -L2, L2 - 2.6, col); b.aabb(-hw - .01, hw + .01, 1.2, 1.5, -L2, L2, [.95, .95, .95]); b.aabb(-.25, .25, 2.8, 3.1, -L2 + .3, L2 - 3.2, [.7, .72, .75]); wh([-L2 * .6, L2 * .65], .5); head(.8, L2, hw * .7); break; }
+const GLASS = [.08, .11, .15], TIRE = [.06, .06, .07], RIM = [.62, .64, .66], TRIM = [.1, .1, .11];
+/* a body shell from a side profile: pts = [z, y, width factor, segment type] from the front to the back; segment types:
+   'b' painted, 'g' glass on top (windscreen / rear window), 'c' cabin (painted roof); side windows above the belt line
+   in 'g' and 'c' segments. Faces point outwards (front-side culling). */
+function vehShell(b, pts, hw, y0, yb, col, glass) {
+  const n = pts.length;
+  for (let i = 0; i < n - 1; i++) {
+    const A = pts[i], B = pts[i + 1], t = A[3], wa = hw * A[2], wb = hw * B[2];
+    b.quad([-wa, A[1], A[0]], [wa, A[1], A[0]], [wb, B[1], B[0]], [-wb, B[1], B[0]], t === 'g' ? glass : col);
+    for (const sg of [-1, 1]) {
+      const side = (ya0, ya1, yb0, yb1, c) => { const q = [[sg * wa, ya0, A[0]], [sg * wb, yb0, B[0]], [sg * wb, yb1, B[0]], [sg * wa, ya1, A[0]]]; if (sg > 0) b.quad(q[0], q[1], q[2], q[3], c); else b.quad(q[0], q[3], q[2], q[1], c); };
+      if ((t === 'g' || t === 'c') && A[1] > yb + .05 && B[1] > yb + .05) { side(y0, yb, y0, yb, col); side(yb, A[1] - .03, yb, B[1] - .03, glass); side(A[1] - .03, A[1], B[1] - .03, B[1], col); }
+      else side(y0, A[1], y0, B[1], col);
+    }
   }
-  const o = { body: b.build(MAT.lit, false), lamp: l.build(MAT.emis, false) }; return o;
+  const face = (p, f) => { const w = hw * p[2], q = [[-w, y0, p[0]], [w, y0, p[0]], [w, p[1], p[0]], [-w, p[1], p[0]]]; if (f > 0) b.quad(q[0], q[1], q[2], q[3], col); else b.quad(q[0], q[3], q[2], q[1], col); };
+  face(pts[0], 1); face(pts[n - 1], -1);
+}
+/* road vehicles: real body shapes (bonnet, windscreen, roof, boot) for every type, wheels with tyres and hubs, bumpers,
+   grille, mirrors, head / tail lights (lamps glow at night); paint and glass reflect the sky (Phong + environment map) */
+function vehGeo(type, col) {
+  const b = new Builder(), l = new Builder(), T = VT[type], hw = T.w, L2 = T.len / 2, dk = col.map(v => v * .55);
+  /* road wheels are not merged into the body: they are drawn by Traffic as one instanced mesh and roll with the speed */
+  const wheels = [], wheel = (z, r, wd) => { for (const sg of [-1, 1]) wheels.push({ x: sg * (hw + .05 - wd / 2), z, r, wd }); };
+  const lights = (yh, zf, zr, w2, tall) => { for (const sg of [-1, 1]) { l.aabb(sg * w2 - .17, sg * w2 + .17, yh, yh + .13, zf - .02, zf + .04, [1, .97, .85]); l.aabb(sg * w2 - .15, sg * w2 + .15, tall || yh, (tall || yh) + .16, zr - .04, zr + .02, [.9, .06, .05]); l.aabb(sg * (w2 + .2) - .04, sg * (w2 + .2) + .04, yh, yh + .1, zf - .02, zf + .03, [1, .6, .1]); } };
+  const bumpers = (y, zf, zr, w) => { b.aabb(-w, w, y, y + .2, zf - .05, zf + .08, TRIM); b.aabb(-w, w, y, y + .2, zr - .08, zr + .05, TRIM); };
+  const mirrors = (y, z, w) => { for (const sg of [-1, 1]) b.aabb(sg * (w + .02) - .06, sg * (w + .14) + .06, y, y + .13, z - .05, z + .05, dk); };
+  switch (type) {
+    case 'car': case 'taxi': case 'police': case 'hatch': case 'wagon': case 'suv': case 'pickup': {
+      const z = f => f * L2, suv = type === 'suv' || type === 'pickup', y0 = suv ? .42 : .32, yb = suv ? 1.12 : .92, r = suv ? .38 : .31;
+      const P = {
+        car: [[z(1), .45, 1, 'b'], [z(.96), .73, 1, 'b'], [z(.5), .87, .98, 'g'], [z(.2), 1.38, .86, 'c'], [z(-.34), 1.4, .86, 'g'], [z(-.62), .96, .98, 'b'], [z(-.97), .93, 1, 'b'], [z(-1), .5, 1, 'b']],
+        hatch: [[z(1), .45, 1, 'b'], [z(.96), .75, 1, 'b'], [z(.55), .88, .98, 'g'], [z(.24), 1.42, .87, 'c'], [z(-.84), 1.44, .86, 'g'], [z(-1), 1.0, .96, 'b'], [z(-1), .48, 1, 'b']],
+        wagon: [[z(1), .45, 1, 'b'], [z(.96), .73, 1, 'b'], [z(.5), .87, .98, 'g'], [z(.2), 1.4, .87, 'c'], [z(-.9), 1.42, .87, 'g'], [z(-1), .98, .97, 'b'], [z(-1), .48, 1, 'b']],
+        suv: [[z(1), .58, 1, 'b'], [z(.96), .98, 1, 'b'], [z(.56), 1.1, .98, 'g'], [z(.28), 1.72, .9, 'c'], [z(-.88), 1.74, .9, 'g'], [z(-1), 1.22, .97, 'b'], [z(-1), .58, 1, 'b']],
+        pickup: [[z(1), .58, 1, 'b'], [z(.96), .96, 1, 'b'], [z(.58), 1.08, .98, 'g'], [z(.34), 1.68, .9, 'c'], [z(-.06), 1.69, .9, 'b'], [z(-.09), 1.0, 1, 'b']]
+      };
+      const pk = P[type] || P.car; vehShell(b, pk, hw, y0, yb, col, GLASS);
+      if (type === 'pickup') { /* open load bed with walls and tailgate */ b.aabb(-hw, hw, y0, .62, z(-1), z(-.09), col); for (const sg of [-1, 1]) b.aabb(sg * hw - .06, sg * hw + .06, .62, 1.05, z(-1), z(-.09), col); b.aabb(-hw, hw, .62, 1.05, z(-1), z(-1) + .08, col); }
+      b.aabb(-hw * .62, hw * .62, .5, .68, L2 - .01, L2 + .03, TRIM); /* grille */
+      bumpers(y0 - .02, L2, -L2, hw + .02); mirrors(yb + .02, z(suv ? .5 : .46), hw);
+      wheel(z(.64), r, .24); wheel(z(-.64), r, .24); lights(suv ? .82 : .62, L2 + .02, -L2 - .02, hw * .68, type === 'hatch' || type === 'wagon' || type === 'suv' ? .95 : 0);
+      if (type === 'taxi') { b.aabb(-.3, .3, 1.4, 1.62, -.25, .25, [.98, .92, .55]); l.aabb(-.26, .26, 1.44, 1.58, -.26, .26, [1, .95, .7]); }
+      if (type === 'police') { b.aabb(-hw - .005, hw + .005, .62, .78, -L2 * .9, L2 * .9, [.92, .92, .94]); b.aabb(-.45, .45, 1.4, 1.5, -.15, .15, [.15, .15, .17]); }
+      break; }
+    case 'van': case 'amb': case 'rail': {
+      const H = type === 'rail' ? 1.6 : 2.3, y0 = .4, z = f => f * L2;
+      vehShell(b, [[z(1), .55, 1, 'b'], [z(.95), .95, 1, 'b'], [z(.72), 1.15, .98, 'g'], [z(.5), H - .05, .95, 'c'], [z(.22), H, .95, 'b'], [z(-1), H, .95, 'b'], [z(-1), .5, 1, 'b']], hw, y0, 1.15, col, GLASS);
+      if (type === 'amb') { for (const sg of [-1, 1]) b.aabb(sg * hw * .96 - .01, sg * hw * .96 + .01, .95, 1.25, z(-.95), z(.4), [.85, .1, .1]); }
+      if (type === 'rail') b.aabb(-hw, hw, y0, 1.05, z(-1), z(-.15), [.72, .56, .1]);
+      bumpers(.38, L2, -L2, hw); mirrors(1.2, z(.7), hw); wheel(z(.62), .38, .26); wheel(z(-.62), .38, .26); lights(.75, L2 + .02, -L2 - .02, hw * .7, 1.6);
+      break; }
+    case 'bus': case 'mini': {
+      const bus = type === 'bus', H = bus ? 3.1 : 2.45, z = f => f * L2;
+      vehShell(b, bus ? [[z(1), .55, 1, 'b'], [z(.99), 1.15, 1, 'g'], [z(.95), H - .1, .97, 'c'], [z(-.98), H, .97, 'b'], [z(-1), .55, 1, 'b']] : [[z(1), .55, 1, 'b'], [z(.94), 1.0, 1, 'g'], [z(.7), H - .05, .96, 'c'], [z(-1), H, .96, 'b'], [z(-1), .55, 1, 'b']], hw, .42, bus ? 1.25 : 1.15, col, GLASS);
+      if (bus) for (const sg of [-1, 1]) b.aabb(sg * hw - .02, sg * hw + .02, .5, 2.6, z(.62), z(.76), [.12, .14, .16]); /* doors */
+      b.aabb(-hw * .7, hw * .7, H, H + .2, z(-.5), z(.3), [.8, .8, .82]); /* roof units */
+      bumpers(.4, L2, -L2, hw); mirrors(2.0, z(.97), hw); wheel(z(bus ? .62 : .66), bus ? .5 : .4, .3); wheel(z(bus ? -.58 : -.62), bus ? .5 : .4, .3); lights(.8, L2 + .02, -L2 - .02, hw * .72, 1.0);
+      break; }
+    case 'truck': case 'semi': case 'fire': {
+      /* cab with a raked windscreen, then a box body, tanker or semitrailer */
+      const cl = type === 'semi' ? 2.7 : 2.5, cz = L2 - cl, H = type === 'semi' ? 3.0 : 2.7;
+      vehShell(b, [[L2, .7, 1, 'b'], [L2 - .05, 1.45, 1, 'g'], [L2 - .45, H, .97, 'c'], [cz + .1, H + .05, .97, 'b'], [cz, .7, 1, 'b']], hw, .55, 1.5, col, GLASS);
+      const bx0 = -L2, bx1 = cz - .25, BH = type === 'semi' ? 3.9 : type === 'fire' ? 2.9 : 3.3, bc = type === 'fire' ? col : [.86, .86, .88];
+      b.aabb(-hw, hw, .9, BH, bx0, bx1, bc); b.aabb(-hw - .01, hw + .01, 1.3, 1.6, bx0, bx1, type === 'fire' ? [.95, .95, .95] : col);
+      if (type === 'fire') { b.aabb(-.3, .3, BH, BH + .3, bx0 + .5, bx1 - .5, [.7, .72, .75]); for (const sg of [-1, 1]) for (let k = 0; k < 4; k++) b.aabb(sg * hw - .02, sg * hw + .02, 1.8, 2.6, bx0 + .4 + k * 1.4, bx0 + 1.5 + k * 1.4, [.65, .05, .04]); }
+      b.aabb(-hw, hw, .5, .9, bx0, cz, TRIM); bumpers(.5, L2, -L2, hw);
+      mirrors(1.9, L2 - .25, hw); const r = .52; wheel(L2 - .9, r, .34); if (type === 'semi') { wheel(-L2 * .7, r, .34); wheel(-L2 * .85, r, .34); wheel(L2 * .35, r, .34); } else { wheel(-L2 * .6, r, .34); wheel(-L2 * .3, r, .34); }
+      lights(.95, L2 + .02, -L2 - .02, hw * .72, 1.0);
+      break; }
+    case 'tractor': {
+      b.aabb(-.62, .62, .7, 1.4, -L2 + 1.0, L2, col); b.aabb(-.72, .72, 1.3, 2.75, -L2 + .7, -L2 + 2.4, GLASS); b.aabb(-.78, .78, 2.7, 2.85, -L2 + .6, -L2 + 2.5, col);
+      for (const sg of [-1, 1]) b.aabb(sg * .72 - .03, sg * .72 + .03, 1.3, 2.75, -L2 + .7, -L2 + .76, col);
+      b.aabb(-.08, .08, 1.4, 2.4, L2 - 1.2, L2 - 1.05, TRIM); /* exhaust */
+      for (const sg of [-1, 1]) { b.add(TPL.cyl, sg > 0 ? 1.18 : -1.18 + .45, .78, -L2 + 1.5, 1.56, .45, 1.56, Math.PI / 2, Math.PI / 2, TIRE); b.add(TPL.cyl, sg > 0 ? 1.2 : -1.2 + .15, .78, -L2 + 1.5, .8, .15, .8, Math.PI / 2, Math.PI / 2, [.85, .7, .15]); b.add(TPL.cyl, sg > 0 ? .98 : -.98 + .3, .45, L2 - .7, .9, .3, .9, Math.PI / 2, Math.PI / 2, TIRE); }
+      lights(1.1, L2 + .02, -L2 - .02, .45, 1.2);
+      break; }
+  }
+  const o = { body: b.build(MAT.car || MAT.lit, false), lamp: l.build(MAT.emis, false), wheels }; return o;
+}
+/* unit road wheel (axis along x, radius 1, width 1): tyre with a rounded shoulder, rim with five spokes and a hub on both
+   faces; the spokes make the rolling visible */
+function roadWheelGeo() {
+  const B = new Builder(), seg = 14, TY = TIRE, SH = [TIRE[0] * 1.3, TIRE[1] * 1.3, TIRE[2] * 1.3], RM = RIM, SP = [RIM[0] * .55, RIM[1] * .55, RIM[2] * .58], HB = [.75, .76, .78];
+  Geo.cylX(B, -.5, .5, 0, 0, 1, TY, seg); Geo.cylX(B, -.42, .42, 0, 0, 1.03, SH, seg);
+  for (const sg of [-1, 1]) { const x = sg * .52, n = [sg, 0, 0], ring = (r0, r1, c) => { for (let k = 0; k < seg; k++) { const a0 = k / seg * TAU, a1 = (k + 1) / seg * TAU, p = (r, a) => [x, Math.cos(a) * r, Math.sin(a) * r];
+      Geo.tri(B, p(r0, a0), sg > 0 ? p(r1, a0) : p(r1, a1), sg > 0 ? p(r1, a1) : p(r1, a0), n, n, n, c); Geo.tri(B, p(r0, a0), sg > 0 ? p(r1, a1) : p(r0, a1), sg > 0 ? p(r0, a1) : p(r1, a1), n, n, n, c); } };
+    ring(.62, .7, TY); ring(.5, .62, RM);
+    for (let k = 0; k < 10; k++) { const a0 = k / 10 * TAU, a1 = (k + 1) / 10 * TAU, c = k % 2 ? SP : RM, p = (r, a) => [x + sg * .01, Math.cos(a) * r, Math.sin(a) * r];
+      Geo.tri(B, p(.12, a0), sg > 0 ? p(.5, a0) : p(.5, a1), sg > 0 ? p(.5, a1) : p(.5, a0), n, n, n, c); Geo.tri(B, p(.12, a0), sg > 0 ? p(.5, a1) : p(.12, a1), sg > 0 ? p(.12, a1) : p(.5, a1), n, n, n, c); }
+    for (let k = 0; k < 8; k++) { const a0 = k / 8 * TAU, a1 = (k + 1) / 8 * TAU, p = (r, a) => [x + sg * .02, Math.cos(a) * r, Math.sin(a) * r]; Geo.tri(B, [x + sg * .02, 0, 0], sg > 0 ? p(.13, a0) : p(.13, a1), sg > 0 ? p(.13, a1) : p(.13, a0), n, n, n, HB); }
+  }
+  return B.build(MAT.lit, false).geometry;
 }
 const Crossings = {
   list: new Map(), pool: [], flash: 0, bell: 0,
@@ -4699,8 +4853,8 @@ const Lights = {
 
 const Traffic = {
   veh: [], lines: [], ixList: [], scene: null, geo: {}, tSpawn: 0, tRefresh: 0, max: 30, near: 0, zoneKey: '', sirenT: 0, nextId: 1,
-  init(scene) { this.scene = scene; Crossings.init(scene); Lights.init(scene); this.beaconMat = [new THREE.MeshBasicMaterial({ color: 0xff2020 }), new THREE.MeshBasicMaterial({ color: 0x2060ff })]; this.beaconG = new THREE.BoxGeometry(.6, .18, .25); },
-  reset() { for (const v of this.veh) this.scene.remove(v.g); this.veh.length = 0; this.lines.length = 0; this.ixList.length = 0; this.zoneKey = ''; Crossings.reset(); },
+  init(scene) { this.scene = scene; this.wm = new THREE.InstancedMesh(roadWheelGeo(), new THREE.MeshLambertMaterial({ vertexColors: true }), 480); this.wm.count = 0; this.wm.frustumCulled = false; this.wm.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(this.wm); this.WM = [new THREE.Matrix4(), new THREE.Matrix4(), new THREE.Matrix4()]; Crossings.init(scene); Lights.init(scene); this.beaconMat = [new THREE.MeshBasicMaterial({ color: 0xff2020 }), new THREE.MeshBasicMaterial({ color: 0x2060ff })]; this.beaconG = new THREE.BoxGeometry(.6, .18, .25); },
+  reset() { for (const v of this.veh) this.scene.remove(v.g); this.veh.length = 0; this.lines.length = 0; this.ixList.length = 0; this.zoneKey = ''; if (this.wm) this.wm.count = 0; Crossings.reset(); },
   /* lines of a zone (memoised) */
   roads(z) {
     if (z.rd) return z.rd; const L = [], T = Rail.town(z), xs = Rail.xings(z), add = (ax, c, a, b, o) => { const ln = Object.assign({ ax, c, a, b, zi: z.zi, vm: 11, ixs: [], xing: false, city: false }, o); L.push(ln); return ln; };
@@ -4743,12 +4897,14 @@ const Traffic = {
     for (let i = this.veh.length - 1; i >= 0; i--) if (!seen.has(this.veh[i].line)) this.kill(i);
   },
   kill(i) { const v = this.veh[i]; this.scene.remove(v.g); this.veh.splice(i, 1); },
+  /* passenger cars: sedans, hatchbacks, estates, SUVs and (mostly in the country) pickups */
+  pc(rural) { const r = Math.random(); return r < .33 ? 'car' : r < .6 ? 'hatch' : r < .74 ? 'wagon' : r < (rural ? .88 : .94) ? 'suv' : 'pickup'; },
   pickType(ln, hour) {
     const r = Math.random(), night = Env.night;
-    if (ln.rural) return r < .5 ? 'car' : r < .62 ? 'van' : r < .74 ? 'truck' : r < .85 ? 'tractor' : r < .92 ? 'semi' : r < .96 ? 'rail' : r < .98 ? 'police' : 'amb';
-    if (ln.city) return r < .5 ? 'car' : r < .62 ? 'taxi' : r < .72 ? 'van' : r < .82 ? 'bus' : r < .87 ? 'mini' : r < .92 ? 'truck' : r < .95 ? 'police' : r < .975 ? 'amb' : r < .99 ? 'fire' : 'semi';
-    if (ln.ind) return r < .3 ? 'truck' : r < .5 ? 'semi' : r < .7 ? 'van' : r < .9 ? 'car' : r < .95 ? 'rail' : 'fire';
-    return r < .55 ? 'car' : r < .67 ? 'van' : r < .8 ? (night > .5 ? 'car' : 'tractor') : r < .88 ? 'mini' : r < .94 ? 'truck' : r < .97 ? 'bus' : r < .985 ? 'amb' : 'police';
+    if (ln.rural) return r < .5 ? this.pc(true) : r < .62 ? 'van' : r < .74 ? 'truck' : r < .85 ? 'tractor' : r < .92 ? 'semi' : r < .96 ? 'rail' : r < .98 ? 'police' : 'amb';
+    if (ln.city) return r < .5 ? this.pc() : r < .62 ? 'taxi' : r < .72 ? 'van' : r < .82 ? 'bus' : r < .87 ? 'mini' : r < .92 ? 'truck' : r < .95 ? 'police' : r < .975 ? 'amb' : r < .99 ? 'fire' : 'semi';
+    if (ln.ind) return r < .3 ? 'truck' : r < .5 ? 'semi' : r < .7 ? 'van' : r < .9 ? this.pc() : r < .95 ? 'rail' : 'fire';
+    return r < .55 ? this.pc() : r < .67 ? 'van' : r < .8 ? (night > .5 ? this.pc() : 'tractor') : r < .88 ? 'mini' : r < .94 ? 'truck' : r < .97 ? 'bus' : r < .985 ? 'amb' : 'police';
   },
   density() {
     const h = Env.clock, g = (c, w) => Math.exp(-((h - c) / w) * ((h - c) / w));
@@ -4767,8 +4923,8 @@ const Traffic = {
     const g = new THREE.Group(); if (geo.body) g.add(geo.body.clone()); let lamp = null; if (geo.lamp) { lamp = geo.lamp.clone(); g.add(lamp); }
     let beacon = null; if (type === 'police' || type === 'amb' || type === 'fire' || type === 'rail') { beacon = new THREE.Mesh(this.beaconG, this.beaconMat[0]); beacon.position.set(0, type === 'police' ? 1.62 : type === 'fire' ? 3.2 : type === 'amb' ? 2.5 : 1.7, VTt.len * .1); g.add(beacon); }
     g.rotation.order = 'YXZ'; g.frustumCulled = false; this.scene.add(g);
-    const vm = ln.vm * VTt.vm * (type === 'car' || type === 'taxi' ? .9 + Math.random() * .2 : 1) * (beacon && type !== 'rail' ? 1.2 : 1);
-    this.veh.push({ id: this.nextId++, type, len: VTt.len, line: ln, t, dir, v: vm * .8, vm, g, lamp, beacon, x: o.x, z: o.z, yaw: o.yaw, stuck: 0, y: 0, ys: -1e9, emer: !!beacon && type !== 'rail' });
+    const vm = ln.vm * VTt.vm * (['car', 'taxi', 'hatch', 'wagon', 'suv', 'pickup'].includes(type) ? .9 + Math.random() * .2 : 1) * (beacon && type !== 'rail' ? 1.2 : 1);
+    this.veh.push({ id: this.nextId++, type, len: VTt.len, line: ln, t, dir, v: vm * .8, vm, g, lamp, beacon, x: o.x, z: o.z, yaw: o.yaw, stuck: 0, y: 0, ys: -1e9, emer: !!beacon && type !== 'rail', wheels: geo.wheels || [], spin: Math.random() * 6 });
   },
   roadY(ln, o) {
     if (ln.path && Math.abs(o.u) > Math.abs(ln.path.u0) + 58) return Roads.y(o.s, o.u) + .05;
@@ -4827,6 +4983,11 @@ const Traffic = {
       if (v.beacon) { const ph = Math.floor(tt * 5) % 2; v.beacon.material = this.beaconMat[v.type === 'amb' || v.type === 'fire' ? ph : v.type === 'police' ? ph : 0]; v.beacon.visible = v.type === 'rail' ? ph === 0 : true; }
     }
     this.near += (clamp(near / 5, 0, 1) - this.near) * Math.min(1, dt * 1.5);
+    /* rolling wheels: one instanced mesh for every vehicle; the spin follows the distance driven */
+    { const [M, R, S] = this.WM, wm = this.wm, cap = wm.instanceMatrix.count; let n = 0;
+      for (const v of vs) { v.spin += v.v * dt; if (!v.wheels.length) continue; v.g.updateMatrix();
+        for (const w of v.wheels) { if (n >= cap) break; R.makeRotationX(v.spin / w.r); M.makeTranslation(w.x, w.r, w.z).multiply(R).multiply(S.makeScale(w.wd, w.r, w.r)).premultiply(v.g.matrix); wm.setMatrixAt(n++, M); } }
+      if (n || wm.count) wm.instanceMatrix.needsUpdate = true; wm.count = n; }
     Lights.update(this, camPos, tt);
     /* siren of the closest emergency vehicle */
     this.sirenT -= dt; if (this.sirenT <= 0 && Sound.ok) { this.sirenT = .5; let best = null, bd = 1e9; for (const v of vs) if (v.emer) { const d = Math.hypot(v.x - camPos.x, v.z - camPos.z); if (d < bd) { bd = d; best = v; } } if (best && bd < 260) { const vol = clamp(1 - bd / 260, 0, 1) * .08, f = Math.floor(G.t * 2) % 2 ? 960 : 720; Sound.toneAt(f, .42, vol, 'triangle', best.x, best.z); } }
@@ -4900,6 +5061,12 @@ function buildFreightLoco(rr) {
   Geo.cylY(b, 0, -1.4, 3.6, 4.25, .2, .17, DK, 8); Geo.cylY(b, 0, -.8, 3.6, 4.1, .16, .14, DK, 8);
   for (const sg of [-1, 1]) { b.aabb(Math.min(sg * 1.38, sg * 1.42), Math.max(sg * 1.38, sg * 1.42), 2.28, 2.33, -9.8, 6.5, [.85, .78, .2]); for (let z = -9.6; z < 6.6; z += 2.1) b.aabb(Math.min(sg * 1.38, sg * 1.42), Math.max(sg * 1.38, sg * 1.42), 1.3, 2.33, z, z + .05, [.85, .78, .2]); }
   b.aabb(-1.45, 1.45, 1.3, 2.9, -10, -9.6, C);
+  /* hood door seams and handles, sun visors over the windscreen, cab roof horns, sand boxes over the bogies */
+  { const SE = [C[0] * .62, C[1] * .62, C[2] * .62], MT = [.55, .56, .58];
+    for (const sg of [-1, 1]) { for (let z = -9.025; z < 6.2; z += 1.25) { b.aabb(Math.min(sg * 1.15, sg * 1.165), Math.max(sg * 1.15, sg * 1.165), 1.32, 3.5, z - .02, z + .02, SE); b.aabb(Math.min(sg * 1.15, sg * 1.18), Math.max(sg * 1.15, sg * 1.18), 2.05, 2.12, z + .35, z + .5, MT); }
+      for (const bz of [-6.3, 6.3]) b.aabb(Math.min(sg * 1.2, sg * 1.42), Math.max(sg * 1.2, sg * 1.42), 1.3, 1.62, bz - .35, bz + .35, SE); }
+    for (const x of [-.67, .67]) b.add(TPL.box, x, 3.9, 9.62, 1.1, .03, .3, 0, .25, DK);
+    for (const x of [-.25, .25]) Geo.cylZ(b, x, 4.27, 8.2, 8.75, .065, MT, 8); }
   for (const z of [10.1, -10.1]) b.add(TPL.box, 0, .62, z, 2.8, .5, .5, 0, z > 0 ? -.5 : .5, DK);
   for (const z of [-10.6, 10]) b.aabb(-.18, .18, .8, 1.05, z, z + .6, DK);
   for (const p of [[-.95, 1.6], [.95, 1.6]]) l.aabb(p[0] - .14, p[0] + .14, p[1] - .1, p[1] + .1, 9.75, 9.8, [1, 1, 1]); l.aabb(-.16, .16, 3.92, 4.02, 9.45, 9.5, [1, 1, 1]);
@@ -4939,6 +5106,18 @@ function buildFreightCar(kind, rr, tail) {
     b.aabb(-1.4, 1.4, 1.1, 1.25, -7.4, 7.4, [.3, .26, .22]);
     for (let z = -6.6; z <= 6.7; z += 2.2) for (const sg of [-1, 1]) b.aabb(Math.min(sg * 1.3, sg * 1.42), Math.max(sg * 1.3, sg * 1.42), 1.25, 3.4, z - .07, z + .07, DK);
     for (let row = 0; row < 3; row++) for (let i = 0; i < 4 - (row > 1 ? 1 : 0); i++) Geo.cylZ(b, -1.0 + i * .66 + (row % 2) * .33, 1.55 + row * .55, -7.2, 7.2, .28, [.45 + rr() * .1, .32, .2], 8);
+  }
+  /* both ends: red buffer beam with side buffers; corner ladders and grab irons on the tall wagons; a hand-brake wheel
+     on one end; a darker grime band along the frame */
+  { const ST = [.14, .14, .15], PL = [.48, .48, .5], BB = [.42, .1, .08], LD = [.62, .6, .55], tall = kind === 0 || kind === 1 || kind === 4;
+    for (const e of [-1, 1]) { const zi = e * 7.4; b.aabb(-1.42, 1.42, .82, 1.2, Math.min(zi, zi + e * .12), Math.max(zi, zi + e * .12), BB);
+      for (const x of [-.98, .98]) { Geo.cylZ(b, x, 1.0, Math.min(zi, zi + e * .6), Math.max(zi, zi + e * .6), .085, ST, 8); Geo.cylZ(b, x, 1.0, Math.min(zi + e * .6, zi + e * .7), Math.max(zi + e * .6, zi + e * .7), .19, PL, 10); }
+      if (tall) for (const sg of [-1, 1]) { const x = sg * 1.53, zz = e * 7.0;
+        for (const zr of [zz - .22, zz + .22]) b.aabb(Math.min(x, x + sg * .04), Math.max(x, x + sg * .04), 1.15, 3.3, zr - .02, zr + .02, LD);
+        for (let y = 1.4; y < 3.3; y += .38) b.aabb(Math.min(x, x + sg * .04), Math.max(x, x + sg * .04), y - .015, y + .015, zz - .22, zz + .22, LD); }
+    }
+    { const z = 7.55, y = kind === 2 || kind === 5 ? 1.75 : 2.6; Geo.cylZ(b, .6, y, z, z + .05, .22, [.1, .1, .11], 10); Geo.cylZ(b, .6, y, z - .15, z, .03, ST, 6); b.aabb(.57, .63, 1.2, y, z - .1, z - .02, ST); }
+    for (const sg of [-1, 1]) b.aabb(Math.min(sg * 1.4, sg * 1.43), Math.max(sg * 1.4, sg * 1.43), .82, 1.1, -7.4, 7.4, [.07, .065, .06]);
   }
   if (tail) for (const x of [-1.1, 1.1]) tl.aabb(x - .12, x + .12, 1.45, 1.65, -7.48, -7.42, [1, 1, 1]);
   g.add(b.build(MAT.lit, true)); const tm = tl.build(MH.aiTail); if (tm) g.add(tm);
@@ -5191,6 +5370,87 @@ const Wildlife = {
   }
 };
 /* Banners driven by what the world is actually about to show */
+/* ===== Birds: a few flocks around the camera, by landscape and time of day =====
+   Species: starlings (swirling flocks over fields and towns), sparrows (small flocks over gardens and forest edges),
+   crows (a few, low over fields), gulls (over water, gliding), storks (wetlands and fields, slow wing beats), a raptor
+   (soaring in circles over hills and mountains). Ground flocks sit near the line and take off when the train comes
+   close. Bodies and wings are instanced (3 draw calls for every bird); wings beat or glide by species. Nothing flies at
+   night, in heavy rain, snow storms or tunnels, and nothing moves while the game is paused. */
+const BIRDS = {
+  starling: { size: .55, col: [.12, .12, .14], flap: 13, amp: .8, glide: .25, speed: 13, n: [10, 22], spread: 9 },
+  sparrow: { size: .42, col: [.45, .34, .24], flap: 16, amp: .85, glide: .15, speed: 10, n: [5, 10], spread: 5 },
+  crow: { size: .9, col: [.06, .06, .07], flap: 5, amp: .6, glide: .35, speed: 11, n: [2, 5], spread: 12 },
+  gull: { size: 1.0, col: [.93, .93, .95], wcol: [.75, .76, .8], flap: 4, amp: .5, glide: .6, speed: 12, n: [3, 7], spread: 14 },
+  stork: { size: 1.7, col: [.95, .95, .95], wcol: [.12, .12, .13], flap: 2.4, amp: .45, glide: .5, speed: 10, n: [1, 3], spread: 18 },
+  raptor: { size: 1.4, col: [.38, .26, .16], flap: 3, amp: .3, glide: .92, speed: 9, n: [1, 1], spread: 0 }
+};
+const Birds = {
+  MAX: 90, flocks: [], t: 0, spawnT: 2,
+  init(scene) {
+    /* body: ellipsoid trunk, round head, beak and a fanned tail merged into one mesh; vertex colours give a lighter
+       belly and a coloured beak (they multiply the species colour, so a crow stays black and a gull gets a yellow bill) */
+    const parts = [], part = (g, col) => { if (g.index) g = g.toNonIndexed(); const n = g.attributes.position.count, cl = new Float32Array(n * 3); for (let i = 0; i < n; i++) { const c = typeof col === 'function' ? col(g.attributes.position.getY(i)) : col; cl.set(c, i * 3); } g.setAttribute('color', new THREE.BufferAttribute(cl, 3)); g.deleteAttribute('uv'); parts.push(g); };
+    const trunk = new THREE.SphereGeometry(1, 7, 5); trunk.scale(.15, .13, .44); part(trunk, y => y < -.03 ? [1.35, 1.32, 1.25] : [1, 1, 1]);
+    const head = new THREE.SphereGeometry(1, 6, 4); head.scale(.085, .085, .095); head.translate(0, .07, .44); part(head, [1, 1, 1]);
+    const beak = new THREE.ConeGeometry(.03, .13, 4); beak.rotateX(Math.PI / 2); beak.translate(0, .06, .58); part(beak, [2.2, 1.6, .35]);
+    const tail = new THREE.BufferGeometry(); tail.setAttribute('position', new THREE.Float32BufferAttribute([0, .02, -.3, -.13, .01, -.68, .13, .01, -.68, 0, .02, -.3, .13, .01, -.68, -.13, .01, -.68], 3)); tail.computeVertexNormals(); part(tail, [.9, .9, .9]);
+    const body = new THREE.BufferGeometry(), cat = k => { let n = 0; for (const g of parts) n += g.attributes[k].array.length; const a = new Float32Array(n); let o = 0; for (const g of parts) { a.set(g.attributes[k].array, o); o += g.attributes[k].array.length; } return a; };
+    body.setAttribute('position', new THREE.BufferAttribute(cat('position'), 3)); body.setAttribute('normal', new THREE.BufferAttribute(cat('normal'), 3)); body.setAttribute('color', new THREE.BufferAttribute(cat('color'), 3)); for (const g of parts) g.dispose();
+    const wing = new THREE.BufferGeometry(); wing.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, .18, .95, 0, -.08, 0, 0, -.22, .95, 0, -.08, .55, 0, -.32, 0, 0, -.22], 3)); wing.computeVertexNormals();
+    const M = (side, vc) => new THREE.MeshLambertMaterial({ color: 0xffffff, side, vertexColors: !!vc });
+    this.body = new THREE.InstancedMesh(body, M(THREE.FrontSide, true), this.MAX); this.wing = new THREE.InstancedMesh(wing, M(THREE.DoubleSide), this.MAX * 2);
+    for (const m of [this.body, this.wing]) { m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(m.instanceMatrix.count * 3).fill(1), 3); m.count = 0; m.frustumCulled = false; scene.add(m); }
+    this.M0 = new THREE.Matrix4(); this.M1 = new THREE.Matrix4(); this.M2 = new THREE.Matrix4(); this.q = new THREE.Quaternion(); this.e = new THREE.Euler(0, 0, 0, 'YXZ'); this.v = new THREE.Vector3(); this.sc = new THREE.Vector3(); this.c = new THREE.Color();
+  },
+  clear() { this.flocks.length = 0; if (this.body) { this.body.count = 0; this.wing.count = 0; } },
+  count() { let n = 0; for (const f of this.flocks) n += f.birds.length; return n; },
+  /* a new flock that suits the land around the camera */
+  spawn(G, cam) {
+    const b = G.bio; if (!b || Env.night > .55 || Env.rain > .6 || Env.snow > .6 || Env.tunnel > .2 || this.flocks.length >= (QL.fx < .6 ? 2 : QL.fx < 1 ? 3 : 4)) return;
+    const r = Math.random(), water = b.lw > .5 || b.coast > .35 || b.swamp > .3 || b.dip > .3, hills = b.mount > .45;
+    const kind = water && r < .55 ? 'gull' : (b.bw && b.bw.wetland > .4 && r < .7) ? 'stork' : hills && r < .3 ? 'raptor' : b.forest > .5 ? (r < .6 ? 'sparrow' : 'crow') : (b.field > .3 || b.urban > .3) ? (r < .55 ? 'starling' : r < .8 ? 'crow' : 'sparrow') : (r < .5 ? 'starling' : 'crow');
+    const S = BIRDS[kind], n = Math.min(Math.round(this.MAX * clamp(QL.fx, .4, 1.25) / 1.25) - this.count(), S.n[0] + Math.floor(Math.random() * (S.n[1] - S.n[0] + 1))); if (n <= 0) return;
+    const p = G.phys, dir = p.dir || 1, ahead = 120 + Math.random() * 380, u = (Math.random() < .5 ? -1 : 1) * (20 + Math.random() * 220), o = {}; ptAt(p.s + dir * ahead, u, o);
+    const ground = meshH(p.s + dir * ahead, u), sitting = (kind === 'crow' || kind === 'starling' || kind === 'stork') && Math.random() < .45 && Math.abs(u) < 90;
+    const a = Math.random() * 6.283, alt = kind === 'raptor' ? 90 + Math.random() * 80 : kind === 'gull' ? 18 + Math.random() * 25 : sitting ? 0 : 10 + Math.random() * 40;
+    const f = { kind, S, x: o.x, y: Math.max(ground, 0) + alt, z: o.z, vx: Math.cos(a) * S.speed, vz: Math.sin(a) * S.speed, vy: 0, alt, sitting, ground: Math.max(ground, 0), t: 0, turn: (Math.random() - .5) * .4, birds: [] };
+    for (let i = 0; i < n; i++) f.birds.push({ ox: (Math.random() - .5) * S.spread, oy: (Math.random() - .5) * S.spread * .3, oz: (Math.random() - .5) * S.spread, ph: Math.random() * 6.283, sz: .85 + Math.random() * .3 });
+    this.flocks.push(f);
+  },
+  update(dt, G, cam) {
+    if (!this.body) return; this.t += dt; const P = cam.position;
+    if ((this.spawnT -= dt) < 0) { this.spawnT = 6 + Math.random() * 10; if (SettingsManager.v.fxDetail && QL.fx > 0) this.spawn(G, cam); }
+    const tr = G.train && G.train.items[0] && G.train.items[0].g.position;
+    for (let i = this.flocks.length - 1; i >= 0; i--) {
+      const f = this.flocks[i], S = f.S; f.t += dt;
+      /* a ground flock takes off when the train comes within ~70 m */
+      if (f.sitting) { if (tr && Math.hypot(tr.x - f.x, tr.z - f.z) < 70) { f.sitting = false; f.vy = 4; f.alt = 15 + Math.random() * 25; f.t = 0; const a = Math.atan2(f.z - tr.z, f.x - tr.x) + (Math.random() - .5); f.vx = Math.cos(a) * S.speed; f.vz = Math.sin(a) * S.speed; } }
+      else {
+        if (f.kind === 'raptor') { const w = .12; const vx = f.vx; f.vx = vx * Math.cos(w * dt) - f.vz * Math.sin(w * dt); f.vz = vx * Math.sin(w * dt) + f.vz * Math.cos(w * dt); }   /* circling */
+        else { f.turn += (Math.random() - .5) * dt * .6; f.turn = clamp(f.turn, -.35, .35); const w = f.turn * dt, vx = f.vx; f.vx = vx * Math.cos(w) - f.vz * Math.sin(w); f.vz = vx * Math.sin(w) + f.vz * Math.cos(w); }
+        f.x += f.vx * dt; f.z += f.vz * dt; const want = f.ground + f.alt + Math.sin(f.t * .4) * 3; f.vy += ((want - f.y) * .6 - f.vy) * Math.min(1, dt * 1.5); f.y += f.vy * dt;
+      }
+      if (Math.min(Math.hypot(f.x - P.x, f.z - P.z), tr ? Math.hypot(f.x - tr.x, f.z - tr.z) : 1e9) > 1100 || f.t > 240) this.flocks.splice(i, 1);
+    }
+    /* instances */
+    let nb = 0, nw = 0; const M0 = this.M0, M1 = this.M1, M2 = this.M2, e = this.e, q = this.q, c = this.c;
+    for (const f of this.flocks) {
+      const S = f.S, yaw = Math.atan2(f.vx, f.vz), sitting = f.sitting, swirl = f.kind === 'starling' ? 1 : .35;
+      for (const bd of f.birds) {
+        if (nb >= this.MAX) break;
+        const tt = this.t + bd.ph, ox = bd.ox + Math.sin(tt * .7) * S.spread * .15 * swirl, oz = bd.oz + Math.cos(tt * .55) * S.spread * .15 * swirl, oy = bd.oy + Math.sin(tt * .9) * .6;
+        const cs = Math.cos(yaw), sn = Math.sin(yaw), x = f.x + ox * cs + oz * sn, z = f.z - ox * sn + oz * cs, y = sitting ? f.ground + .15 : f.y + oy, sz = S.size * bd.sz;
+        e.set(sitting ? 0 : -f.vy * .03, yaw + (sitting ? Math.sin(tt * .3) * 1.5 : 0), 0); q.setFromEuler(e); M0.compose(this.v.set(x, y, z), q, this.sc.set(sz, sz, sz));
+        this.body.setMatrixAt(nb, M0); c.setRGB(S.col[0], S.col[1], S.col[2]); this.body.setColorAt(nb, c); nb++;
+        /* wing beat: flapping with pauses for gliding (gliders mostly hold the wings out); folded when sitting */
+        const glide = Math.sin(tt * .9) > 1 - 2 * S.glide, ang = sitting ? 1.25 : glide ? .08 + Math.sin(tt * 1.5) * .05 : Math.sin(tt * S.flap) * S.amp;
+        for (const sg of [-1, 1]) { M1.makeRotationZ(sg * ang); M2.makeScale(sg * 1, 1, 1); M1.premultiply(M2); M1.premultiply(M2.makeTranslation(sg * .06, .02, 0)); this.wing.setMatrixAt(nw, M2.multiplyMatrices(M0, M1)); const wc = S.wcol || S.col; c.setRGB(wc[0], wc[1], wc[2]); this.wing.setColorAt(nw, c); nw++; }
+      }
+    }
+    this.body.count = nb; this.wing.count = nw;
+    if (nb || this.was) { this.body.instanceMatrix.needsUpdate = this.wing.instanceMatrix.needsUpdate = true; this.body.instanceColor.needsUpdate = this.wing.instanceColor.needsUpdate = true; } this.was = nb > 0;
+  }
+};
 const Narrator = {
   seen: new Set(), cd: 0, lastWx: '', lastTun: 0, q: [],
   reset() { this.seen.clear(); this.q.length = 0; },
@@ -5997,6 +6257,10 @@ const CamMgr = {
     } else if (id === 'cine') {
       this.cineUpdate(dt, S, inp);
     } else if (id === 'photo') {
+      /* entering photo mode: place the free camera beside the locomotive before it is used this frame (it used to be
+         placed after the camera had already been copied from the empty start point, so for one frame the view sat
+         at the world origin and anything that measured distance from the camera saw it there) */
+      if (this.prevId !== 'photo') { const c = new THREE.Vector3(); train.pointAt(0, 0, 3, c); const hd = train.items[0].g.rotation.y; this.photo.p.set(c.x + Math.sin(hd) * 22 - Math.cos(hd) * 8, c.y + 3, c.z + Math.cos(hd) * 22 + Math.sin(hd) * 8); const d = c.clone().sub(this.photo.p); this.photo.yaw = Math.atan2(-d.x, -d.z); this.photo.pitch = -.1; }
       const P = this.photo, mv = InputManager.keys, pm = InputManager.pad.move, wp = window.WalkPad || { f: 0, s: 0 };
       const k = .004 * sens; if (inp.dx || inp.dy) { P.yaw += inp.dx * k; P.pitch = clamp(P.pitch + inp.dy * k, -1.5, 1.5); }
       P.yaw -= InputManager.pad.look[0] * 1.6 * dt; P.pitch = clamp(P.pitch - InputManager.pad.look[1] * dt, -1.5, 1.5);
@@ -6006,7 +6270,7 @@ const CamMgr = {
     }
     if (Env.quake > .01) { cam.position.x += (Math.sin(t * 53) + Math.sin(t * 31)) * .05 * Env.quake; cam.position.y += Math.sin(t * 61) * .07 * Env.quake; cam.position.z += Math.sin(t * 43) * .04 * Env.quake; }
     Env.mapMode = id === 'map'; if (this.marker && id !== 'map') this.marker.visible = false;
-    if (this.prevId !== id) { this.prevId = id; if (id === 'photo') { const c = new THREE.Vector3(); train.pointAt(0, 0, 3, c); const hd = train.items[0].g.rotation.y; this.photo.p.set(c.x + Math.sin(hd) * 22 - Math.cos(hd) * 8, c.y + 3, c.z + Math.cos(hd) * 22 + Math.sin(hd) * 8); const d = c.clone().sub(this.photo.p); this.photo.yaw = Math.atan2(-d.x, -d.z); this.photo.pitch = -.1; } }
+    if (this.prevId !== id) this.prevId = id;
     wantFov = this.lens(wantFov); if (Math.abs(cam.fov - wantFov) > .01) { cam.fov += (wantFov - cam.fov) * Math.min(1, dt * 6); cam.updateProjectionMatrix(); }
     cam.near = id === 'cab' || id === 'walk' || id === 'pass' ? .08 : .3; if (cam.near !== this._near) { this._near = cam.near; cam.updateProjectionMatrix(); }
   },
@@ -6579,10 +6843,10 @@ const Quality = {
   NAMES: { low: 'Низька', medium: 'Середня', high: 'Висока', ultra: 'Ультра' },
   ORDER: ['low', 'medium', 'high', 'ultra'],
   list: {
-    low: { tree: .4, shadow: 0, ext: 0, ahead: 6, fog: 1.3, pr: 1, precip: .45, fx: .4, tex: 64, aniso: 1, phong: 0, detail: 0, traffic: .45, ai: 2, beam: 0, pax: .5, clouds: .5 },
-    medium: { tree: .75, shadow: 1024, ext: 90, ahead: 8, fog: 1.1, pr: 1.3, precip: .75, fx: .7, tex: 128, aniso: 2, phong: 1, detail: 1, traffic: .75, ai: 3, beam: 1, pax: .8, clouds: .75 },
-    high: { tree: 1, shadow: 2048, ext: 140, ahead: 10, fog: 1, pr: 1.75, precip: 1, fx: 1, tex: 128, aniso: 4, phong: 1, detail: 2, traffic: 1, ai: 4, beam: 1, pax: 1, clouds: .88 },
-    ultra: { tree: 1.25, shadow: 4096, ext: 180, ahead: 12, fog: .85, pr: 2, precip: 1.3, fx: 1.25, tex: 256, aniso: 8, phong: 1, detail: 3, traffic: 1.2, ai: 5, beam: 1, pax: 1.2, clouds: 1 }
+    low: { vegLod: 250, tree: .4, shadow: 0, ext: 0, ahead: 6, fog: 1.3, pr: 1, precip: .45, fx: .4, tex: 64, aniso: 1, phong: 0, detail: 0, traffic: .45, ai: 2, beam: 0, pax: .5, clouds: .5 },
+    medium: { vegLod: 330, tree: .75, shadow: 1024, ext: 90, ahead: 8, fog: 1.1, pr: 1.3, precip: .75, fx: .7, tex: 128, aniso: 2, phong: 1, detail: 1, traffic: .75, ai: 3, beam: 1, pax: .8, clouds: .75 },
+    high: { vegLod: 380, tree: 1, shadow: 2048, ext: 140, ahead: 10, fog: 1, pr: 1.75, precip: 1, fx: 1, tex: 128, aniso: 4, phong: 1, detail: 2, traffic: 1, ai: 4, beam: 1, pax: 1, clouds: .88 },
+    ultra: { vegLod: 480, tree: 1.25, shadow: 4096, ext: 180, ahead: 12, fog: .85, pr: 2, precip: 1.3, fx: 1.25, tex: 256, aniso: 8, phong: 1, detail: 3, traffic: 1.2, ai: 5, beam: 1, pax: 1.2, clouds: 1 }
   },
   gpu: '',
   /* device class from memory, CPU cores, GPU family and the Android low-RAM flag */
@@ -6602,12 +6866,12 @@ const Quality = {
   },
   set(name) {
     const q = this.list[name] || this.list.high, old = this.cur || {}; this.level = name; this.cur = q;
-    Object.assign(QL, { tree: q.tree, shadow: q.shadow, ahead: q.ahead, precip: q.precip, fx: q.fx, detail: q.detail, fog: q.fog, traffic: q.traffic, ai: q.ai, beam: q.beam, pax: q.pax, clouds: q.clouds });
+    Object.assign(QL, { vegLod: q.vegLod, tree: q.tree, shadow: q.shadow, ahead: q.ahead, precip: q.precip, fx: q.fx, detail: q.detail, fog: q.fog, traffic: q.traffic, ai: q.ai, beam: q.beam, pax: q.pax, clouds: q.clouds });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pr)); resize();
     renderer.shadowMap.enabled = q.shadow > 0; sky.sun.castShadow = q.shadow > 0;
     if (q.shadow > 0) { const s = sky.sun.shadow; s.mapSize.set(q.shadow, q.shadow); if (s.map) { s.map.dispose(); s.map = null; } const c = s.camera; c.left = -q.ext; c.right = q.ext; c.top = q.ext; c.bottom = -q.ext; c.near = 10; c.far = 700; c.updateProjectionMatrix(); s.bias = -.0006; s.normalBias = .4; }
     if (old.tex !== q.tex) setWindowTextures(q.tex, q.aniso);
-    if (MAT.trainBody) { MAT.trainBody.envMap = q.phong ? EnvMap.tex : null; MAT.trainBody.specular.setHex(q.phong ? 0x2a2a2a : 0x000000); MAT.trainBody.needsUpdate = true; MAT.trainGlass.envMap = q.phong ? EnvMap.tex : null; MAT.trainGlass.needsUpdate = true; }
+    if (MAT.trainBody) { MAT.trainBody.envMap = q.phong ? EnvMap.tex : null; MAT.trainBody.specular.setHex(q.phong ? 0x2a2a2a : 0x000000); MAT.trainBody.needsUpdate = true; MAT.trainGlass.envMap = q.phong ? EnvMap.tex : null; MAT.trainGlass.needsUpdate = true; } if (MAT.car) { MAT.car.envMap = q.phong ? EnvMap.tex : null; MAT.car.specular.setHex(q.phong ? 0x2a2a2a : 0x101010); MAT.car.needsUpdate = true; }
     const rebuild = old.shadow !== q.shadow || old.tree !== q.tree || old.detail !== q.detail || old.ahead !== q.ahead;
     if (old.shadow !== q.shadow) scene.traverse(o => { if (o.material) o.material.needsUpdate = true; });
     if (rebuild && G.running) G.rebuild = true;
@@ -6672,7 +6936,7 @@ function initEngine() {
   cabLight = new THREE.PointLight(0xffe2b0, 0, 9, 1.5); camera.add(cabLight);
   initMaterials(); sky = new Sky(scene, camera); precip = new Precip(scene, 4000); FarLand.init(scene, sky);
   G.train = new Train(scene, SettingsManager.v.train, SettingsManager.v.tc[SettingsManager.v.train].nc); CabGlass.attach(G.train.loco); G.phys = new TrainPhysics(G.train.def); G.phys.setDef(G.train.def, G.train.nc); Sound.setProfile(G.train.def.snd); Limits.init(scene); Junctions.init(scene); Traffic.init(scene); Events.init(scene); Aviation.init(scene); Volcano.init(scene); BiomeFX.init(scene); Spaceport.init(scene); G.lim = { cur: 120, allowed: 40, next: null, atp: 'ok', mode: 'warn' }; G.atpBrake = 0; G.atpCut = false;
-  Dev.init(scene); StopMark.init(scene); WorldGen.init(scene); Passengers.init(scene); StationLife.init(); Wildlife.init(scene); RailTraffic.init(scene); GlowPts.init(scene);
+  Dev.init(scene); StopMark.init(scene); WorldGen.init(scene); Passengers.init(scene); StationLife.init(); Wildlife.init(scene); Birds.init(scene); RailTraffic.init(scene); GlowPts.init(scene);
   CamMgr.init(camera); InputManager.init($('gl')); UI.init(G);
   InputManager.onKey = onKey; window.addEventListener('resize', resize); window.addEventListener('orientationchange', () => setTimeout(resize, 200));
   document.addEventListener('visibilitychange', () => { if (document.hidden) G.save(); else { try { if (navigator.wakeLock && G.running && !G.wl) navigator.wakeLock.request('screen').then(l => { G.wl = l; }).catch(() => { }); } catch (e) { } } });
@@ -6691,7 +6955,7 @@ function onKey(e) {
   else if (k === 'Escape') { const s = $('settings'); if (s.classList.contains('open')) UI.act('closeset'); else UI.act('settings'); }
 }
 function resetWorld(seed, rt, layout) {
-  G.seed = seed; G.layout = layout || 'dense'; Rail.reset(seed, rt, G.layout); Biome.reset(); FarLand.reset(); BiomeFX.clear(); meshClear(); Junctions.reset(); resetZoneTex(); WorldGen.clear(); Passengers.clear(); Stations.reset(); Narrator.reset(); Wildlife.clear(); RailTraffic.reset(); Limits.reset(); Traffic.reset(); Events.reset(); Aviation.reset(); Volcano.reset(); Spaceport.reset(); Weather.rr = rng(seed ^ 0x5bd1e995); Junctions.restore();
+  G.seed = seed; G.layout = layout || 'dense'; Rail.reset(seed, rt, G.layout); Biome.reset(); FarLand.reset(); BiomeFX.clear(); meshClear(); Junctions.reset(); resetZoneTex(); WorldGen.clear(); Passengers.clear(); Stations.reset(); Narrator.reset(); Wildlife.clear(); Birds.clear(); RailTraffic.reset(); Limits.reset(); Traffic.reset(); Events.reset(); Aviation.reset(); Volcano.reset(); Spaceport.reset(); Weather.rr = rng(seed ^ 0x5bd1e995); Junctions.restore();
 }
 /* start a journey: o = { save } to continue, or { mode, train, layout } for a new one, or { mode: 'tutorial', lesson } */
 function startGame(o) {
@@ -6805,7 +7069,8 @@ function frame(now) {
   G.genMode = G.inMenu ? 'menu' : G.paused ? 'pause' : CamMgr.id === 'photo' ? 'photo' : Math.abs(p.v) < .5 ? 'stopped' : 'moving';
   WorldGen.update(mid, p.dir, WorldGen.budget(G.genMode, Math.abs(p.v)));
   objFadePlanes(mid, p.dir);
-  if (sim > 0) { Stations.update(dt, p, tr, G.mode); Passengers.update(dt); StationLife.update(dt); RailTraffic.update(dt, p, camera.position); Wildlife.update(dt, p, G.t); Traffic.update(dt, G, camera.position); if (G.mode !== 'tutorial') Events.update(dt, G, camera, renderer); Aviation.update(dt, G, camera, renderer); Volcano.update(dt, G, camera, renderer); BiomeFX.update(dt, G, camera); Spaceport.update(dt, G, camera, renderer); Narrator.update(dt * (G.mode === 'scenic' ? 2 : 1), p, bio); }
+  WorldGen.lod(camera.position); WINDU.value.x += dt * (G.paused ? 0 : 1); WINDU.value.y = .08 + .32 * clamp(Env.wind, 0, 1.2) + .1 * (Env.rain || 0);
+  if (sim > 0) { Stations.update(dt, p, tr, G.mode); Passengers.update(dt); StationLife.update(dt); RailTraffic.update(dt, p, camera.position); Birds.update(dt, G, camera); Wildlife.update(dt, p, G.t); Traffic.update(dt, G, camera.position); if (G.mode !== 'tutorial') Events.update(dt, G, camera, renderer); Aviation.update(dt, G, camera, renderer); Volcano.update(dt, G, camera, renderer); BiomeFX.update(dt, G, camera); Spaceport.update(dt, G, camera, renderer); Narrator.update(dt * (G.mode === 'scenic' ? 2 : 1), p, bio); }
   if (sim > 0) { Tutor.update(dt); Stats.tick(dt, G); Achievements.tick(dt); } Guide.update(dt); Profile.tick(dt);
   tr.items[0].g.getWorldPosition(G.mid); tr.pointAt(tr.length * .4, 0, 0, G.mid); sky.shadowTarget = G.mid;
   /* camera */

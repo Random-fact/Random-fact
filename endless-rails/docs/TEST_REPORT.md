@@ -533,3 +533,54 @@ rendering at half rate while paused; fewer audio automation events per second.
   requested again on entering full screen. Outside full screen a browser keeps following the phone.
 * Check: default → native "land" + landscape lock requested; switching the setting → native "auto" + unlock.
   Labels translated in all 10 languages. Not tested on a phone.
+
+## Update 19 Nov 2026 (12): visual quality overhaul
+Backup before the work: git tag `backup-before-visual-overhaul`. Same art style (flat-shaded low-poly, vertex colours, no
+bitmap textures except the existing window textures), same mechanics, cameras, trains, events and settings.
+
+### Vegetation
+* New tree models for every species (oak/maple/lime, birch, poplar, willow, pine, spruce, fir, cherry, bush): crowns
+  of several irregular lobes, darker underneath and lighter on top, so no two trees have the same silhouette; round
+  trunks and two branches close to the line; conifers with tiers turned against each other; willows with hanging
+  strands; birches with dark bark marks.
+* Level of detail per chunk: detailed plants near the camera, simple crowns further away (switch with hysteresis,
+  distance by quality: 250 / 330 / 380 / 480 m for Low / Medium / High / Ultra). Low quality builds the simple plants only.
+* Wind: every plant sways in the vertex shader, the top more than the bottom, each with its own phase; amplitude
+  follows the weather's wind and rain; nothing moves while the game is paused.
+* Ground cover next to the line, by biome: grass tufts (with flowers in meadows), ferns in forests, reeds by the
+  water, dry shrubs in arid land. Not built on Low.
+### Road vehicles
+* Bodies are extruded side profiles (bonnet, windscreen, roof, rear window, boot) with glass bands, grille, bumpers,
+  mirrors, head and tail lights; new types: hatchback, estate, SUV, pickup (with an open bed); sedans, taxis, police,
+  vans, ambulances, minibuses, buses, box trucks, semi-trailers, fire engines, tractors and railway service vans keep
+  their own shapes. Paint has a light environment reflection (switched off on Low).
+* Wheels are no longer part of the body: every road wheel is one instance of a tyre-rim-spokes-hub model in a single
+  instanced mesh (1 draw call for all traffic) and rolls with the distance the vehicle drives. Speeds vary per car.
+### Birds
+* New `Birds` system: flocks by landscape (gulls over water and river crossings, storks in wetlands, a soaring raptor
+  over hills, sparrows and crows at forest edges, swirling starling flocks over fields and towns). Body with head, beak
+  (coloured: yellow for gulls, red for storks), light belly and a fanned tail; two-part wings that beat, glide or are
+  folded per species. Ground flocks sit near the line and take off when the train comes within ~70 m.
+* At most 2 / 3 / 4 / 4 flocks and about 29 / 50 / 72 / 90 birds on Low / Medium / High / Ultra; none at night, in heavy rain or snow, in tunnels;
+  2 draw calls in total.
+### Trains
+* Passenger cars: rubber gaskets around every window, a drip rail over each window and rain gutters along the roof
+  (classic cars), side buffers on a red buffer beam at both ends (classic cars; high-speed cars stay smooth). Sliding
+  door leaves now have a framed window on both faces.
+* Classic locomotive: window gaskets that follow the narrowing nose, radiator louvres along the engine room, a hand
+  rail with stanchions, buffer beam with buffers at the rear.
+* Freight locomotive: hood door seams and handles, sand boxes over the bogies, sun visors over the windscreen, horns on
+  the cab roof. Freight wagons: buffer beams and buffers at both ends, corner ladders on box, tank and hopper wagons, a
+  hand-brake wheel, a grime band along the frame.
+* Unchanged and still working: rotating wheelsets on every train (instanced), sprung bogies, couplers, gangways, lit
+  interiors with seated passengers, steam locomotive motion.
+### People
+* Build varies (slim to heavy: torso, shoulders and leg spacing), long hair for about a third of the people, skirts,
+  backpacks; suitcases, workers' vests and hard hats as before. Three more instanced meshes (10 for up to 220 people).
+### Buildings
+* Apartment blocks on High/Ultra: a balcony slab with a glass or painted railing on every floor (the cheaper full-height
+  balcony column remains on Low/Medium); antenna masts and satellite dishes on flat roofs (Medium and above).
+### Fixes found on the way
+* Photo mode: on the first frame after switching to it the free camera was still at the world origin (it was placed
+  after it had been used); anything measuring distance from the camera saw it there (e.g. birds were removed). The camera
+  is now placed before use.
