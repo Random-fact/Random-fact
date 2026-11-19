@@ -24,9 +24,9 @@ Requirements change: re-check the linked Google pages on the day you submit.
 ## 2. Ads (AdMob rewarded only)
 | | Item |
 |---|---|
-| ⬜ | AdMob account, app registered (package `com.endlessrails.game`), **one Rewarded ad unit**; IDs in `android/gradle.properties` (release build fails while empty) |
+| ✅ | AdMob account, app registered (package `com.endlessrails.game`), **one Rewarded ad unit**; IDs in `android/gradle.properties` (app `ca-app-pub-7389308732042512~6246758735`, rewarded unit `ca-app-pub-7389308732042512/4275201510`) |
 | ⬜ | AdMob ▸ Privacy & messaging: publish a **GDPR message** (EEA/UK/CH); optionally a US-states message. Test with `ump.testDevice` in a debug build |
-| ⬜ | Link AdMob to the Play app after publication; host **app-ads.txt** on the website set in the Play store listing |
+| ⬜ | Link AdMob to the Play app after publication; host **app-ads.txt** on the website set in the Play store listing (ready-made file: `endless-rails/docs/app-ads.txt`, to be served at the root of that domain, e.g. `https://example.com/app-ads.txt`) |
 | ✅ | No banners/interstitials; rewarded ads only on explicit user action with an explanatory dialog; reward only on `onUserEarnedReward`; failure/unavailable messages; frequency cap (45 s, 15/day); max ad content rating PG; privacy-options entry point in Settings ▸ Privacy |
 | ⬜ | Test on real devices: successful reward, early close (no reward), no fill / offline, consent form in EEA (debug geography), privacy options form |
 
