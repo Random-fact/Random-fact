@@ -1499,7 +1499,7 @@ function initMaterials() {
   MAT.veg.onBeforeCompile = sh => { sh.uniforms.uWind = WINDU; sh.vertexShader = sh.vertexShader.replace('void main() {', 'uniform vec3 uWind;\nvoid main() {').replace('#include <begin_vertex>', '#include <begin_vertex>\n\tif (uv.x > 0.0) { float ph = uv.y * 6.2832; transformed.x += (sin(uWind.x * 1.7 + ph) + .35 * sin(uWind.x * 4.3 + ph * 2.0)) * uv.x * uWind.y; transformed.z += (cos(uWind.x * 1.3 + ph * 1.3) + .3 * sin(uWind.x * 3.7 + ph)) * uv.x * uWind.y * .75; }'); };
   /* road and street surfaces lie a few centimetres above the ground: a depth offset keeps them in front of it at any
      distance (without it they flickered into dashes beyond ~600 m, where the depth buffer cannot separate 7 cm) */
-  MAT.road = new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 });
+  MAT.road = new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -.6, polygonOffsetUnits: -5 });
   for (const m of [MAT.lit, MAT.build, MAT.emis, MAT.road]) m.defines = { OBJ_FADE: '' };
   MAT.lamp = new THREE.MeshBasicMaterial({ color: 0x554a30 });
   MAT.flash = new THREE.MeshBasicMaterial({ color: 0x660000 });
@@ -2231,10 +2231,10 @@ const ZoneDecor = {
     if (s < ch.s0 || s >= ch.s1) return;
     const bi = Rail.bio(s);
     const q = (ss, uu) => { const L = this.loc(ss, uu); return [L.x, (uu > -11 && uu < 6.5 ? L.ty - .18 : meshH(ss, uu) + .06), L.z]; };
-    const city = z.kind === 'city' || (z.kind === 'station' && z.sk === 'city'), sp = city ? [-120, 120] : [-60, 60]; if (!city) { const RR = Roads.find(z, s, 'x'); if (RR) Roads.build(ch, B, RR, this); } for (let u = sp[0]; u < sp[1]; u += 6) (B.lit.decal || B.lit).quad(q(s - 3.5, u), q(s + 3.5, u), q(s + 3.5, u + 6), q(s - 3.5, u + 6), [.17, .17, .18], true);
+    const city = z.kind === 'city' || (z.kind === 'station' && z.sk === 'city'), sp = city ? [-120, 120] : [-60, 60]; if (!city) { const RR = Roads.find(z, s, 'x'); if (RR) Roads.build(ch, B, RR, this); } for (let u = sp[0]; u < sp[1]; u += 6) ((u + 6 > -11 && u < 6.5) ? B.lit : (B.lit.decal || B.lit)).quad(q(s - 3.5, u), q(s + 3.5, u), q(s + 3.5, u + 6), q(s - 3.5, u + 6), [.17, .17, .18], true);   /* over the tracks without the depth offset: the rails and crossing panels stay on top */
     /* rubber crossing panels across both tracks, white stop lines and edge marks */
     for (const ut of [0, -U2]) { const L = this.loc(s, ut); B.lit.add(TPL.box, L.x, L.ty - .12, L.z, 3.1, .1, 7.2, L.hd, 0, [.24, .24, .25]); }
-    for (const [uu, f] of [[8.2, 1], [-12.8, -1]]) { const L = this.loc(s - 1.75 * f, uu); B.lit.add(TPL.box, L.x, meshH(s - 1.75 * f, uu) + .07, L.z, .4, .03, 3.4, L.hd + Math.PI / 2, 0, [.92, .92, .9]); }
+    for (const [uu, f] of [[8.2, 1], [-12.8, -1]]) { const L = this.loc(s - 1.75 * f, uu); (B.lit.decal || B.lit).add(TPL.box, L.x, meshH(s - 1.75 * f, uu) + .07, L.z, .4, .03, 3.4, L.hd + Math.PI / 2, 0, [.92, .92, .9]); }   /* stop lines lie on the road: same depth offset */
     /* barrier posts with St Andrew's crosses and lamp housings (right of track 1, left of track 2) */
     for (const uu of [4.8, -9.4]) for (const f of [-1, 1]) {
       const L = this.loc(s + f * 5, uu); B.lit.add(TPL.boxB, L.x, L.ty - .4, L.z, .15, 3.4, .15, 0, 0, 0xdddddd);

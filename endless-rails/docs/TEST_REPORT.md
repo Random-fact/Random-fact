@@ -657,8 +657,16 @@ bitmap textures except the existing window textures), same mechanics, cameras, t
   not separate the 7 cm between road and ground and roads flickered into dashes.
 * Cost: road surfaces 5–18 k triangles per view (High), one extra draw call per chunk; chunk build 21 → 27 ms on
   average over 12 chunks (roads ~4 ms per road, the rest grass and town balconies), built in the background.
+* The part of a level crossing's road that lies over the tracks keeps the ordinary material (rails and crossing panels
+  stay on top), and the white stop lines are drawn with the road material so they stay visible on it.
 * Views checked: top-down over 6 settlement ends, high oblique views over a village, a town and a forest region
-  (like the cinematic camera), close views at crossings.
+  (like the cinematic camera), a close and a raised view of a village level crossing (compared with the previous
+  version: same crossing, stop lines and rails visible, the lane stub beside it gone).
+* Regression after the change, all passed with no page errors: boot (desktop, phone), long run 334 km (heap steady at
+  69 MB), stress jumps, events with AI trains, HUD at 8 screen sizes, continue/save, quick menu. Village traffic uses the
+  new exits (4 exit lines, cars drive out on them). The old `traffic.js` finds no cars at its underpass on the previous
+  version either (out of date). APK (offline: no network request, no errors, music) and standalone page rebuilt and
+  checked.
 * Not changed: in a city the cross streets still end at the street along the line (T-junctions) on both sides; roads
   still end 3.3 km out at the edge of the detailed land; on the inner side of tight curves (radius 620–3200 m) the far
   part of a road can come back closer to the line (it never reaches it); not tested on a phone.
