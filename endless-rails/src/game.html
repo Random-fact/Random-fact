@@ -6570,8 +6570,11 @@ const CamMgr = {
       p.y = Math.max(p.y, c.y - 1.5); this.clampCam(p, S, 1.8);
       cam.position.copy(p); cam.lookAt(c);
     } else if (id === 'map') {
-      const M = this.map, k = .005 * sens; if (inp.dx || inp.dy) { M.rot -= inp.dx * k; M.tilt = clamp(M.tilt - inp.dy * k * .5, 0, 1.2); }
-      M.h = clamp(M.h * (1 + inp.zoom * .06), 60, 1600); M.rot -= inp.lx * dt;
+      /* the same look convention as every other camera: "up" (drag up, stick up) tilts the view up towards the horizon,
+         "right" turns it right; the two inversion settings flip the axes exactly as they do elsewhere. The vertical axis
+         used to be the other way round here (drag up looked further down) and the stick could not tilt the map at all. */
+      const M = this.map, k = .005 * sens; if (inp.dx || inp.dy) { M.rot -= inp.dx * k; M.tilt = clamp(M.tilt + inp.dy * k * .5, 0, 1.2); }
+      M.h = clamp(M.h * (1 + inp.zoom * .06), 60, 1600); M.rot -= inp.lx * dt; M.tilt = clamp(M.tilt + inp.ly * .6 * dt, 0, 1.2);
       const c = new THREE.Vector3(); train.pointAt(train.length * .35, 0, 0, c); const hd = train.items[0].g.rotation.y + M.rot;
       p.set(c.x - Math.sin(hd) * Math.sin(M.tilt) * M.h * .9, c.y + Math.cos(M.tilt) * M.h, c.z - Math.cos(hd) * Math.sin(M.tilt) * M.h * .9);
       cam.position.copy(p); cam.up.set(Math.sin(hd), 0, Math.cos(hd)); cam.lookAt(c); cam.up.set(0, 1, 0);
