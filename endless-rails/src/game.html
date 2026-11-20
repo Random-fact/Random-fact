@@ -6569,9 +6569,12 @@ const CamMgr = {
       e.set(L.pitch, L.yaw + Math.PI, 0); q.setFromEuler(e); q.premultiply(it.g.getWorldQuaternion(new THREE.Quaternion()));
       cam.position.copy(p); cam.quaternion.copy(q);
     } else if (id === 'chase' || id === 'orbit') {
-      const o = this.orbit, k = .005 * sens, loco = train.items[0].g;
-      if (inp.dx || inp.dy) { o.az -= inp.dx * k; o.el = clamp(o.el - inp.dy * k, -.15, 1.45); o.idle = 0; } else o.idle += dt;
-      o.az -= inp.lx * 1.6 * dt; o.el = clamp(o.el - inp.ly * dt, -.15, 1.45); o.az = Math.atan2(Math.sin(o.az), Math.cos(o.az));
+      /* vertical: the free external camera (orbit) moves the other way from the chase camera, as the player asked:
+         "up" (drag up, stick up) raises the camera over the train; in the chase camera "up" looks up (the camera goes
+         lower). The vertical-inversion setting flips both. Horizontal is the same in both. */
+      const o = this.orbit, k = .005 * sens, loco = train.items[0].g, vs = id === 'orbit' ? -1 : 1;
+      if (inp.dx || inp.dy) { o.az -= inp.dx * k; o.el = clamp(o.el - vs * inp.dy * k, -.15, 1.45); o.idle = 0; } else o.idle += dt;
+      o.az -= inp.lx * 1.6 * dt; o.el = clamp(o.el - vs * inp.ly * dt, -.15, 1.45); o.az = Math.atan2(Math.sin(o.az), Math.cos(o.az));
       o.d = clamp(o.d * (1 + inp.zoom * .06), id === 'chase' ? 8 : 12, id === 'chase' ? 90 : 320);
       if (id === 'chase' && o.idle > 6) { o.az += (Math.PI - Math.atan2(Math.sin(o.az - Math.PI), Math.cos(o.az - Math.PI)) - Math.PI) * 0; const da = Math.atan2(Math.sin(Math.PI - o.az), Math.cos(Math.PI - o.az)); o.az += da * Math.min(1, dt * .5); o.el += (.3 - o.el) * Math.min(1, dt * .5); }
       const c = new THREE.Vector3(); if (id === 'chase') train.pointAt(10, 0, 3, c); else train.pointAt(train.length * .45, 0, 2.5, c);

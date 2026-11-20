@@ -808,3 +808,11 @@ bitmap textures except the existing window textures), same mechanics, cameras, t
   another station, one new card at 1.4 km. English, photo camera, third day — translated card at 1.3 km. Sandbox button —
   card at 1.3 km. Driver training — no cat, no card. Screenshots at 834×375 (the card does not cover the HUD).
   New strings translated into all 10 languages (617 strings, validator: 0 missing / 0 placeholder mismatches).
+
+## Update 20 Nov 2026 (19): free external camera — vertical axis reversed (player's request)
+* In the free external camera (orbit) "up" (drag up, stick up) now raises the camera over the train, so the view tilts
+  down; before it lowered the camera (view tilted up), like the chase camera. Horizontal is unchanged. The
+  vertical-inversion setting still flips it (with it on, drag up lowers the camera). All other cameras unchanged.
+* Check (same method as in section 17, free mode, drag and gamepad, 4 settings): orbit "right/down" by default,
+  horizontal inversion "left/down", vertical inversion "right/up", both "left/up"; chase, cab and map unchanged
+  ("right/up" by default).
