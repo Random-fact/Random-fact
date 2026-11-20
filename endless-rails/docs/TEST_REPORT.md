@@ -764,3 +764,19 @@ bitmap textures except the existing window textures), same mechanics, cameras, t
   APK (offline, no network request, no errors) and standalone page rebuilt; both carry the atlas.
 * Not done: tests on a real phone; the animation was checked frame by frame in the atlas and by the clock in the game,
   not by recording the screen at 60 frames/s.
+
+## Update 20 Nov 2026 (16): the cat never takes over the camera; cinematic accents on random days
+* The cat no longer changes the player's camera anywhere. (The only place that did was the event-sandbox button,
+  which switched to the cinematic camera; it now only places the cat and brings the train near it.) With the cab,
+  chase or any other camera the train simply passes the cat's station.
+* The cinematic camera gives the cat its own shot only on accent days, and only if the player is already watching through
+  it. Accent days are chosen from the world seed: the first within the first 8 game days, then each one 3–8 days after
+  the last accent that was actually filmed. A due accent waits until the cinematic camera has filmed it (if the player
+  is not in that camera when passing, it comes on the next pass in the cinematic camera). The cat still sits on a
+  platform every day; the schedule (last and next accent day) is saved with the journey.
+* The sandbox button makes the current day an accent day, so the shot can be tried by switching to the cinematic camera.
+* Checks: schedule over 80 days for 3 seeds with the accent filmed whenever due — first accent on day 0–7, gaps 3–8 days
+  (never more than 8); with 40 % of the due days missed (player not in the cinematic camera) the accent comes on the next
+  filmed pass. Cab camera on an accent day: the camera stayed "cab" the whole time, nothing was filmed and the accent
+  stayed due. Cinematic camera on a non-accent day: only usual shots. Cinematic camera on an accent day: the cat shot ran
+  and the next accent was set 5 days later. Save and reload: schedule unchanged.
