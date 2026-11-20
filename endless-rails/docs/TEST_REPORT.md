@@ -755,5 +755,10 @@ bitmap textures except the existing window textures), same mechanics, cameras, t
   start, middle and end of each move the whole cat was inside the frame and 9 of 9 rays from the camera to points of the
   cat reached it (measured against the real scene: chunks, trains, people).
 * Day, night (22:30, platform lamps), landscape and portrait views; runtime errors: none.
+* Game day: the clock run through midnight on its own (23:54 → 00:01) stepped the day counter once and the cat got the
+  new day's assignment. Sandbox button (English UI): label and banner translated, cinematic camera on, cat 1.1 km ahead.
+* Regression with the event in place, no page errors: boot desktop / phone, HUD at 8 sizes, continue/save, quick menu,
+  photo-mode texts in 10 languages, long run 328 km (heap steady at 38 MB), stress jumps, events with AI trains.
+  APK (offline, no network request, no errors) and standalone page rebuilt; both carry the atlas.
 * Not done: tests on a real phone; the animation was checked frame by frame in the atlas and by the clock in the game,
   not by recording the screen at 60 frames/s.
