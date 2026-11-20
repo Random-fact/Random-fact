@@ -691,3 +691,69 @@ bitmap textures except the existing window textures), same mechanics, cameras, t
   the carriage. Settings tab shows both options (Ukrainian, English). Regression: boot desktop / phone, HUD at 8
   sizes, quick menu, continue/save, photo-mode texts — no page errors. APK and standalone page rebuilt and checked
   offline. Not tested on a phone.
+
+## Update 20 Nov 2026 (15): the station cat (secret event)
+### The animation: the player's own clip, not a remake
+* Source: the attached clip `tools/cat/station_cat_source.mp4` — 164×192 px, 49 frames, 10 frames/s (every frame
+  100 ms, 4.9 s loop), checked with ffprobe. All 49 frames are used in their order; nothing is redrawn, added or dropped.
+* The cat is cut out of the clip's background (blue patterned seat, dark garden, the green diamond floating above it)
+  by `tools/cat/make_cat_atlas.py`: BiRefNet segmentation (rembg, `birefnet-general-lite`) on 4× upscaled frames,
+  then colour clean-up of the fabric and the diamond, the cat's connected shape only, small holes closed, and a 5-frame
+  majority mask against stray background bits. All frames share one crop box, so the cat's own movement inside the clip
+  (head bobbing, leaning) is kept exactly; colours are bled under the transparent margin (no dark fringe when filtered).
+* Packed into a 1024×1024 WebP atlas (8×7 cells of 124×140 px — about 1.5× the source pixels, so no detail of the clip is
+  lost; 222 KB, ~4 MB of video memory) and embedded in the page (`CAT_ATLAS`), so the web page, the APK and the
+  standalone page all carry it without extra files.
+* Playback: frame = elapsed real time / 100 ms, looped over the 49 frames — the clip's pace exactly, independent of the
+  frame rate (no drift, no slowing down or speeding up; at low frame rates some frames are simply not drawn, the timing
+  stays right); it keeps playing while the game is paused or in photo mode. Measured: the frame shown matched the clock
+  in 26 of 27 samples (the other was on the boundary of the next frame), the texture window matched the frame in 27/27.
+* Shown as a camera-facing picture (always seen from the front, the way the clip was filmed), aspect kept, 0.61 m tall
+  (the cat about 0.58 m), with a soft contact shadow; unlit material so the clip's own colours stay, dimmed by daylight
+  (lit by the platform lamps at night).
+### The event
+* One cat per game day (a day counter was added: it advances when the clock passes midnight, saved with the journey).
+  Each new day the cat moves to one of the next three stations ahead (within 70 km), chosen from the world seed and the
+  day; it never appears in trains, cabs or carriages, only on the main platform (beside the player's track).
+* Its spot: 1.65 m in from the platform edge, between the yellow line and the line of overhead-line masts, at least 4 m
+  from anything standing there (masts, clocks, platform number boards, footbridge pillar and stairs) and 2 m from
+  benches, bins, lamps and boards at the back; under open sky where possible (not under canopies, shelter roofs or the
+  footbridge). Passengers keep 7 m clear of it along the platform (waiting, strolling, getting off).
+* Only one cat exists, only while its station is within 1.8 km; it and its texture are released 3 s after the station is
+  left behind and loaded again when needed. Checked 3 times in a row: always exactly 2 objects (cat + shadow), the
+  texture count goes back down, nothing accumulates.
+* Saved with the journey: game day, station, spot and the next shot; after a restart the same cat is back (checked).
+* Event sandbox: a "Station cat" button puts today's cat on the next station ahead and brings the train near it with the
+  cinematic camera on (for trying it out; translated in all 10 languages).
+### The cinematic camera always films it
+* Every frame the cinematic camera asks whether the cat is due: its station is being approached (from where the
+  station is still fully drawn — at most 520 m, less on lower quality, so the camera never looks at half-dissolved
+  scenery), passed or stopped at, and the cat has not had its shot during this visit (again after 70 s of standing).
+  Then the running shot ends, a cat shot starts through the usual fade, and the normal shots continue afterwards.
+  Recorded in a scenic ride: low → side → cat (515 m before the station) → front → fly.
+* Five shots, taking turns from visit to visit; each is planned from where the cat actually sits, in the station's
+  straight local frame, with several variants (side, height, offset):
+  1. close-up intro — a slow dolly along the platform to the face and headphones (cat 60 % of the frame height);
+  2. station wide shot — high and wide over the platform end with the station in view, then lower and closer until the
+     cat leads the frame (16 % at the end);
+  3. train & cat — low from the back of the platform, the cat in front and the arriving or standing train behind it;
+  4. side / over-the-shoulder — just behind and beside the cat, sliding slowly round it, station and tracks beyond;
+  5. hero shot — 20 cm above the platform looking up, slowly circling the cat, on the sun side when possible.
+* A variant is used only if, at five moments of its move, the camera stands in free space (over the platform where it
+  is over it, above the ground elsewhere, outside every obstacle), sees the cat's head and body past every obstacle of
+  the platform (the same boxes the station builder uses: masts and wire arms, lamps, canopies, clocks, boards, benches,
+  footbridge, shelter roofs) and past the train, and the whole cat stays inside the frame with a margin, computed with
+  the real camera's aspect and lens. If the due shot cannot be filmed at that spot another one is used; if none passes,
+  the two close shots are tried with the frame check only, so the cat is never skipped.
+* Portrait screens: the game's lens shift (aim point at 35 % of the height) is compensated in cat shots, so the cat sits
+  in the middle of the screen, clear of the top panels.
+* Depth of field is not available in this renderer (no post-processing), so the close-up has none.
+### Checks
+* Feasibility at 10 stations (halt, regional, mountain, river, freight) × 4 spots each: shots 1, 4 and 5 possible
+  everywhere; shot 3 when the train is near; shot 2 sometimes blocked by a canopy or footbridge (then another shot).
+* All five shots filmed at 4 stations of different kinds (and again after tuning, plus a portrait 390×844 run): at the
+  start, middle and end of each move the whole cat was inside the frame and 9 of 9 rays from the camera to points of the
+  cat reached it (measured against the real scene: chunks, trains, people).
+* Day, night (22:30, platform lamps), landscape and portrait views; runtime errors: none.
+* Not done: tests on a real phone; the animation was checked frame by frame in the atlas and by the clock in the game,
+  not by recording the screen at 60 frames/s.
