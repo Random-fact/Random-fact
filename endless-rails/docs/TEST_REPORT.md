@@ -736,11 +736,13 @@ bitmap textures except the existing window textures), same mechanics, cameras, t
   1. close-up intro — a slow dolly along the platform to the face and headphones (cat 60 % of the frame height);
   2. station wide shot — high and wide over the platform end with the station in view, then lower and closer until the
      cat leads the frame (16 % at the end);
-  3. train & cat — low from the back of the platform, the cat in front and the arriving or standing train behind it;
+  3. train & cat — low from the back of the platform, looking towards the side where the train stands or comes from,
+     so the cat is in front and the train behind it;
   4. side / over-the-shoulder — just behind and beside the cat, sliding slowly round it, station and tracks beyond;
   5. hero shot — 20 cm above the platform looking up, slowly circling the cat, on the sun side when possible.
 * A variant is used only if, at five moments of its move, the camera stands in free space (over the platform where it
-  is over it, above the ground elsewhere, outside every obstacle), sees the cat's head and body past every obstacle of
+  is over it, above the ground elsewhere, at least 1 m from anything standing on the platform, so no post fills the
+  edge of the frame), sees the cat's head and body past every obstacle of
   the platform (the same boxes the station builder uses: masts and wire arms, lamps, canopies, clocks, boards, benches,
   footbridge, shelter roofs) and past the train, and the whole cat stays inside the frame with a margin, computed with
   the real camera's aspect and lens. If the due shot cannot be filmed at that spot another one is used; if none passes,

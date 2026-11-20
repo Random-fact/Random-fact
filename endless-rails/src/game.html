@@ -5690,7 +5690,8 @@ const StationCat = {
       const q = v.pose(e), cam = q.cam, onPl = Math.abs(cam[0] + c.s - z.c) < P && cam[1] > 1.95 && cam[1] < 7.95;
       if (onPl && cam[2] < .8 + .12) { this.why = 'below platform'; return false; }
       const g = this.W(B, cam, T[0]); if (!onPl && g.y < meshH(c.s + cam[0], cam[1]) + .5) { this.why = 'under ground'; return false; }
-      for (const o of O) if (cam[0] > o.s0 - .3 && cam[0] < o.s1 + .3 && cam[1] > o.u0 - .3 && cam[1] < o.u1 + .3 && cam[2] > o.y0 - .3 && cam[2] < o.y1 + .3) { this.why = 'inside obstacle'; return false; }
+      for (const o of O) { const m = o.y0 < 6 && o.u0 > 1.9 ? 1 : .3;   /* a metre clear of anything on the platform, so no post fills the edge of the frame */
+        if (cam[0] > o.s0 - m && cam[0] < o.s1 + m && cam[1] > o.u0 - m && cam[1] < o.u1 + m && cam[2] > o.y0 - .3 && cam[2] < o.y1 + .3) { this.why = 'too close to an obstacle'; return false; } }
       for (const h of [.5, .3]) if (this.blocked(cam, [0, c.u, .8 + h], O)) { this.why = 'view blocked'; return false; }
       pc.copy(camera, false); pc.fov = CamMgr.lens(q.fov); pc.updateProjectionMatrix(); pc.position.copy(g); pc.lookAt(this.W(B, q.look, T[1])); pc.updateMatrixWorld(true);
       const base = this.W(B, [0, c.u, .8], T[1]), rt = T[2].set(g.z - base.z, 0, base.x - g.x).normalize(), w = this.H * CAT_ATLAS.aspect * .5;
@@ -5717,7 +5718,8 @@ const StationCat = {
       for (const sg of [A, -A]) for (const [h0, h1, d0, d1] of [[8.5, 1.9, 30, 5.4], [6.2, 1.7, 26, 5], [4.2, 1.5, 22, 4.6]]) L.push({ dur: 9.5, pose: e => { const t = sm3(e), d = lerp(d0, d1, t);
         return { cam: [sg * d, lerp(5.6, 4.7, t), .8 + lerp(h0, h1, t)], look: [lerp(ctr * .35, -sg * .5, sm3(Math.min(1, e * 1.25))), lerp(2.6, U, t), .8 + lerp(1.6, .3, t)], fov: lerp(52, 34, t) }; } });
     } else if (k === 2) { /* 3 TRAIN & CAT: low from the back of the platform, the cat in front and the arriving / standing train behind it */
-      for (const sg of [dir, -dir]) for (const [u0, d0, h] of [[6.0, 2.4, .7], [5.5, 2.1, .62], [6.6, 2.9, .75], [5.0, 1.8, .55], [6.9, 3.6, .8]]) L.push({ dur: 9, pose: e => { const t = sm3(e);
+      const tc = S.phys.s - dir * S.train.length / 2, ts = Math.sign(tc - c.s) || -dir;   /* the side of the cat where the train stands or comes from: the camera looks that way */
+      for (const sg of [-ts, ts]) for (const [u0, d0, h] of [[6.0, 2.4, .7], [5.5, 2.1, .62], [6.6, 2.9, .75], [5.0, 1.8, .55], [6.9, 3.6, .8]]) L.push({ dur: 9, pose: e => { const t = sm3(e);
         return { cam: [sg * lerp(d0, d0 * .8, t), lerp(u0, u0 - .35, t), .8 + h], look: [-sg * .6, U - .8, .8 + .38], fov: 44 }; } });
     } else if (k === 3) { /* 4 SIDE / OVER-THE-SHOULDER: just behind and beside the cat, sliding slowly round it; the station and the tracks beyond */
       for (const sg of [A, -A]) for (const [du, off, h] of [[1.9, .9, .62], [1.6, .55, .55], [2.3, 1.2, .7], [1.4, .3, .5]]) L.push({ dur: 8.5, pose: e => { const t = sm3(e), a = lerp(sg > 0 ? .55 : Math.PI - .55, sg > 0 ? 1.05 : Math.PI - 1.05, t), r = du + .9;
