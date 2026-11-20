@@ -780,3 +780,17 @@ bitmap textures except the existing window textures), same mechanics, cameras, t
   filmed pass. Cab camera on an accent day: the camera stayed "cab" the whole time, nothing was filmed and the accent
   stayed due. Cinematic camera on a non-accent day: only usual shots. Cinematic camera on an accent day: the cat shot ran
   and the next accent was set 5 days later. Save and reload: schedule unchanged.
+
+## Update 20 Nov 2026 (17): camera inversion works the same in every camera
+* Cause: the top-down map camera had its vertical axis the other way round from every other camera (drag up tilted the
+  map view further down), so with the same settings it felt inverted there and the vertical-inversion option seemed to
+  work backwards. The gamepad's right stick also could not tilt the map at all.
+* Fix: the map uses the common look convention ("up" tilts the view up towards the horizon, "right" turns it right);
+  the right stick tilts it too. The inversion settings are applied in one place (the input layer) for every camera.
+* Check (measured from the camera's actual orientation, not from internal values): 9 player-controlled cameras (cab,
+  free look in the train, carriage window, roof, rear, chase, free external, photo, map) × 4 settings (none, horizontal
+  only, vertical only, both) × 2 inputs (finger/mouse drag, gamepad right stick) × 6 game modes (free, cabin, photo,
+  developer, scenic, driver training). Result: all 432 cases as expected — "right" turns right and "up" looks up by
+  default, horizontal inversion flips only left/right, vertical only up/down. Before the fix the map row was the only
+  one that differed. The cinematic camera has no manual look (it films by itself) and is unchanged.
+* Not done: a check on a real phone and with a real gamepad (the stick was simulated through the Gamepad API).
