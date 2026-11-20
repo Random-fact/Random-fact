@@ -794,3 +794,17 @@ bitmap textures except the existing window textures), same mechanics, cameras, t
   default, horizontal inversion flips only left/right, vertical only up/down. Before the fix the map row was the only
   one that differed. The cinematic camera has no manual look (it films by itself) and is unchanged.
 * Not done: a check on a real phone and with a real gamepad (the stick was simulated through the Gamepad API).
+
+## Update 20 Nov 2026 (18): warning about the station cat
+* When the station where the cat sits today is 1.6 km ahead or less, the game shows an event card like the other events:
+  cat icon, "Station cat", "A cat is sitting at <station> station today · <distance>", tag "daily event". It comes once
+  per cat (once per game day), with every camera, in the player's language; it is added to the events log, and it is
+  spoken when voice announcements for events are on (otherwise a chime). Not in driver training (no cat there). The
+  event-sandbox button shows it again for the newly placed cat.
+* Small fix on the same card: the empty tag frame that appeared under every plain notification (e.g. stop grades) is
+  hidden when there is no tag.
+* Checks: cab camera — no card at 3 km, 1.8 km, 1.65 km; card at 1.5 km with the station's name and distance, one log
+  entry; after passing the station and coming back to 1.2 km no second card. Next game day, chase camera — a new cat at
+  another station, one new card at 1.4 km. English, photo camera, third day — translated card at 1.3 km. Sandbox button —
+  card at 1.3 km. Driver training — no cat, no card. Screenshots at 834×375 (the card does not cover the HUD).
+  New strings translated into all 10 languages (617 strings, validator: 0 missing / 0 placeholder mismatches).
