@@ -856,3 +856,24 @@ bitmap textures except the existing window textures), same mechanics, cameras, t
   condition holds (the test's many retries at the same unsuitable spot inflate its failure count).
 * Not done: real phones, real audio output, hardware GPU; the full statistics page (per system, per event, stability)
   was delivered separately as EndlessRails-stress-test.html.
+
+## Update 22 Nov 2026 (21): HS headlights, wipers, real birds in the birds event
+* HS headlights: the lamps were 5 × 12 cm slits in the nose flanks and could hardly be seen. Now each side has a
+  teardrop lens that follows the curve of the nose (wider at the front) in a dark bezel, with a daytime-running strip
+  above it. The beam used to start in the air 0.6 m in front of the nose tip with its brightest part right there; it now
+  starts inside the nose level with the lamps (the hull hides the start) and fades in over the first ~4 m (both trains).
+  The white bar seen from the cab "where the light starts" was the 2.4 m glow sprites of the own headlights showing
+  through the gap under the nose: the own headlight glows are no longer drawn for the cab and inside-train cameras
+  (outside views keep them).
+* Wipers (both trains): a hub on the frame below the glass, a tapered arm standing off the glass and a blade (carrier +
+  rubber) lying on it, instead of a bare stick. Classic: the hubs moved from inside the pane to the frame below it, so the
+  arms come out of the bottom edge. HS: each wiper sweeps only its own half and stops just short of upright (they used to
+  swing 9° past upright and run over each other). The rain on the glass is cleared from the real arm position as before.
+* Birds event: real birds with flapping wings instead of black particle dots: a V of geese (new species: grey-brown,
+  slow wing beat), or near water a loose flock of gulls. The crossing is timed so the flock passes 45-85 m ahead of the
+  train just as it arrives (from the train speed), 12-17 m up (over the overhead wires, in view through the windscreen).
+  Bird instance limit raised from 90 to 150 so the event flock is never cut short by ambient flocks.
+* Checks: screenshots of the HS nose by day and night, the cab at night (clear, fog, rain) before/after, both cabs'
+  wipers through the whole sweep, the birds event filmed from the cab and the chase camera. Short soak (52 game days,
+  HS train, 8 cars, all events, 15 station stops, 3 turnarounds, 5 reloads, 2 language switches): 0 errors, no objects on
+  the rails, no camera under the ground; boot without errors; APK (offline) and standalone page rebuilt.

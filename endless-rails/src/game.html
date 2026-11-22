@@ -3174,11 +3174,12 @@ function buildLoco(opt) {
     const kn = new THREE.Mesh(new THREE.SphereGeometry(.05, 10, 8), new THREE.MeshLambertMaterial({ color: col })); kn.position.y = .26; p.add(kn); g.add(p); return p;
   };
   const thrL = mkLever(.18, 0x111111), brkL = mkLever(-1.18, 0xb02a20);
-  /* parallel wipers: pivots at the bottom of each half of the pane, parked along the bottom edge */
+  /* parallel wipers: hubs on the frame just below each half of the pane, parked along the bottom edge, both sweeping the
+     same way (they never meet: the hubs are 1.12 m apart and the arms 1.12 m long) */
   const wipers = [];
-  for (const x of [.02, -1.1]) { const p = new THREE.Group(); p.position.set(x, 2.15, 10.03); const a = new THREE.Mesh(new THREE.BoxGeometry(.022, 1.08, .018), new THREE.MeshLambertMaterial({ color: 0x101010 })); a.position.y = .54; p.add(a); g.add(p); wipers.push(p); }
+  for (const x of [.02, -1.1]) { const p = mkWiper(1.12); p.position.set(x, 2.07, FZ + .018); g.add(p); wipers.push(p); }
   const spot = new THREE.SpotLight(0xfff0d0, 0, 380, .38, .55, 1.1); spot.position.set(0, 2.4, 10); const tg = new THREE.Object3D(); tg.position.set(0, 1.2, 60); g.add(tg); spot.target = tg; g.add(spot);
-  return { g, cv, tex, cv2, tex2, thrL, brkL, wipers, wiperLen: 1.08, glassSpec, spot, cabMesh, axles, heads: [[-1.0, 1.45, 10.1], [1.0, 1.45, 10.1], [0, 3.38, 10.1]], beam: [0, 1.45, 10.1] };
+  return { g, cv, tex, cv2, tex2, thrL, brkL, wipers, wiperLen: 1.12, wipeA: [-1.45, .15], glassSpec, spot, cabMesh, axles, heads: [[-1.0, 1.45, 10.1], [1.0, 1.45, 10.1], [0, 3.38, 10.1]], beam: [0, 1.45, 10.1] };
 }
 
 function buildCar(idx, rr, opt) {
@@ -3273,13 +3274,28 @@ function disposeTree(root) {
 function markShared() { for (const o of [MAT, MH || {}]) for (const k in o) if (o[k] && o[k].isMaterial) o[k].userData.shared = true; }
 let BeamG = null;
 function BeamGeo() { if (!BeamG) { BeamG = new THREE.CylinderGeometry(10, .35, 85, 18, 1, true); BeamG.rotateX(Math.PI / 2); BeamG.translate(0, 0, 42.5); BeamG.shared = true; } return BeamG; }
+/* a windscreen wiper: a hub on the frame below the glass, a tapered arm standing a little off the glass and a blade
+   (carrier + rubber) lying on it. Local +y runs along the arm, local +z points away from the glass; the group's
+   rotation.z sweeps it. (The old wipers were bare sticks with no hub, so they seemed to hang in the air.) */
+let WIPER_M = null;
+function mkWiper(len) {
+  const M = WIPER_M || (WIPER_M = { arm: new THREE.MeshLambertMaterial({ color: 0x17191d }), rub: new THREE.MeshLambertMaterial({ color: 0x050506 }), hub: new THREE.MeshLambertMaterial({ color: 0x3a3e45 }) });
+  const p = new THREE.Group(), add = (geo, m, x, y, z, rx) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); if (rx) o.rotation.x = rx; p.add(o); return o; };
+  add(new THREE.CylinderGeometry(.036, .044, .05, 12), M.hub, 0, 0, .02, Math.PI / 2);          /* spindle housing */
+  add(new THREE.CylinderGeometry(.02, .02, .02, 10), M.arm, 0, 0, .052, Math.PI / 2);           /* nut cap */
+  add(new THREE.BoxGeometry(.05, .16, .022), M.arm, 0, .07, .04);                              /* arm root over the hub */
+  add(new THREE.BoxGeometry(.026, len * .9, .014), M.arm, 0, len * .5, .036);                   /* arm */
+  const bl = len * .8; add(new THREE.BoxGeometry(.022, bl, .018), M.arm, 0, len - bl / 2 - .01, .016);   /* blade carrier */
+  add(new THREE.BoxGeometry(.009, bl * .98, .014), M.rub, 0, len - bl / 2 - .01, .002);                  /* rubber on the glass */
+  return p;
+}
 const Beam = {
   m: null,
   mat() {
     if (this.m) return this.m;
     this.m = new THREE.ShaderMaterial({ uniforms: { k: { value: 0 }, col: { value: new THREE.Color(1, .95, .85) } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
       vertexShader: 'varying float vV; varying float vF; void main(){ vV = uv.y; vec4 mv = modelViewMatrix*vec4(position,1.0); vec3 n = normalize(normalMatrix*normal); vF = abs(dot(n, normalize(-mv.xyz))); gl_Position = projectionMatrix*mv; }',
-      fragmentShader: 'uniform float k; uniform vec3 col; varying float vV; varying float vF; void main(){ float a = k * pow(1.0 - vV, 1.8) * pow(vF, 1.3) * 0.2; if (a < 0.002) discard; gl_FragColor = vec4(col, a); }' });
+      fragmentShader: 'uniform float k; uniform vec3 col; varying float vV; varying float vF; void main(){ float a = k * pow(1.0 - vV, 1.8) * pow(vF, 1.3) * 0.2 * smoothstep(0.0, 0.05, vV); if (a < 0.002) discard; gl_FragColor = vec4(col, a); }' });   /* fades in over the first ~4 m: no bright tube where the cone starts at the lamps */
     this.m.userData.shared = true; return this.m;
   }
 };
@@ -3311,7 +3327,9 @@ class Train {
   /* dynamic light halos of the consist: head lamps on the loco, red tail lamps on the last car */
   glows(on, night) {
     const v = this.v3, L = this.loco, k = on ? .35 + .9 * night : .08;
-    for (const h of L.heads || []) { v.set(h[0], h[1], h[2]); L.g.localToWorld(v); GlowPts.addV(v, h[1] > 2 ? 1.6 : 2.4, 1, .96, .86, k); }
+    /* the headlight glows are for outside views: from the cab (or inside the train) the 2.4 m glow sprites showed through
+       the gap under the nose as a bright white bar where the light seemed to start */
+    if (!['cab', 'walk', 'pass'].includes(CamMgr.id)) for (const h of L.heads || []) { v.set(h[0], h[1], h[2]); L.g.localToWorld(v); GlowPts.addV(v, h[1] > 2 ? 1.6 : 2.4, 1, .96, .86, k); }
     if (this.tailCar && this.tailCar.tails) for (const h of this.tailCar.tails) { v.set(h[0], h[1], h[2]); this.tailCar.g.localToWorld(v); GlowPts.addV(v, 1.3, 1, .12, .06, on ? .25 + .8 * night : .15); }
   }
   /* place all vehicles: front of train at track position s, travelling along dir */
@@ -3468,10 +3486,24 @@ function buildHSLoco(opt) {
   /* flat belly pan under the nose (so low cameras never look into the hull) */
   for (let i = 0; i < zs.length - 1; i++) { if (zs[i + 1] <= N0) continue; const a = rings[i].pts[0], b = rings[i + 1].pts[0], n = [0, -1, 0];
     Geo.quad(sh, [a[0], a[1], zs[i]], [-a[0], a[1], zs[i]], [-b[0], b[1], zs[i + 1]], [b[0], b[1], zs[i + 1]], n, n, n, n, [.12, .13, .15]); }
-  /* headlight clusters set into the nose flanks along the accent stripe (tail lamps share the housings) */
+  /* headlight clusters in the nose flanks along the accent stripe (tail lamps share the housings): a teardrop lens that
+     follows the curve of the nose (wider at the front), in a dark bezel, with a daytime-running strip above it. (They
+     used to be 5 x 12 cm slits that could hardly be seen.) */
   const heads = [];
-  { const tz = .72, z = N0 + tz * (N1 - N0), r = hsSec(z), ys = r.top - Math.min(r.ry, (r.top - r.bot) * .6, r.hw * 1.1), y = r.bot + (HSN.FR[2] + HSN.FR[3]) / 2 * (ys - r.bot), hwz = r.hw * (1 - r.tum * .5) * .985, dz = .95 * 1.9 * Math.pow(tz, .9) / (N1 - N0), yaw = Math.atan(dz);
-    for (const sg of [-1, 1]) { lens.add(TPL.box, sg * (hwz - .01), y, z, .05, .12, .85, -sg * yaw, 0, [1, 1, 1]); heads.push([sg * (hwz + .05), y, z + .1]); } }
+  { const at = tz => { const z = N0 + tz * (N1 - N0), r = hsSec(z), ys = r.top - Math.min(r.ry, (r.top - r.bot) * .6, r.hw * 1.1); return { z, y: r.bot + (HSN.FR[2] + HSN.FR[3]) / 2 * (ys - r.bot), x: r.hw * (1 - r.tum * .5) * .985 }; };
+    const T0 = .655, T1 = .765, NS = 10, hgt = t => .075 + .15 * Math.sin(t * Math.PI * .86), BEZ = [.08, .085, .1];
+    for (const sg of [-1, 1]) {
+      const strip = (B, off, grow, dy, hf, col) => { for (let i = 0; i < NS; i++) { const ta = i / NS, tb = (i + 1) / NS, A = at(T0 + (T1 - T0) * ta), Bq = at(T0 + (T1 - T0) * tb), ha = hf ? hf(ta) : hgt(ta) + grow, hb = hf ? hf(tb) : hgt(tb) + grow, xa = sg * (A.x + off), xb = sg * (Bq.x + off), n = [sg, 0, 0];
+        const a = [xa, A.y + dy - ha / 2, A.z], b = [xb, Bq.y + dy - hb / 2, Bq.z], c = [xb, Bq.y + dy + hb / 2, Bq.z], d = [xa, A.y + dy + ha / 2, A.z];
+        if (sg > 0) Geo.quad(B, a, d, c, b, n, n, n, n, col); else Geo.quad(B, a, b, c, d, n, n, n, n, col); } };
+      strip(sh, .006, .07, 0, null, BEZ);                                                              /* bezel */
+      strip(lens, .014, 0, 0, null, [1, 1, 1]);                                                        /* lens */
+      { const lift = t => hgt(t) / 2 + .055; for (let i = 0; i < NS; i++) { const ta = i / NS, tb = (i + 1) / NS, A = at(T0 + (T1 - T0) * (.15 + .85 * ta)), Bq = at(T0 + (T1 - T0) * (.15 + .85 * tb)), xa = sg * (A.x + .012), xb = sg * (Bq.x + .012), n = [sg, 0, 0];
+        const a = [xa, A.y + lift(.15 + .85 * ta) - .012, A.z], b = [xb, Bq.y + lift(.15 + .85 * tb) - .012, Bq.z], c = [xb, Bq.y + lift(.15 + .85 * tb) + .012, Bq.z], d = [xa, A.y + lift(.15 + .85 * ta) + .012, A.z];
+        if (sg > 0) Geo.quad(lens, a, d, c, b, n, n, n, n, [1, 1, 1]); else Geo.quad(lens, a, b, c, d, n, n, n, n, [1, 1, 1]); } }   /* daytime-running strip */
+      const C = at(T0 + (T1 - T0) * .62); heads.push([sg * (C.x + .06), C.y, C.z]);
+    }
+    HSN.LAMP = at(T0 + (T1 - T0) * .5); }
   /* gangway cover to the next car, pantograph with noise shields, roof fairing, cab door outline */
   Geo.hull(sh, { zs: [Z0 - .74, Z0 - .37, Z0], sec: () => ({ hw: 1.44, bot: 1.0, top: TOP - .06, ry: RY, tum: .03 }), col: () => [.2, .21, .23] });
   { const PG = [.16, .16, .18], pz = -7.6; sh.aabb(-.55, .55, TOP - .05, TOP + .1, pz - 1.2, pz + 1.2, [.7, .72, .76]);
@@ -3482,7 +3514,7 @@ function buildHSLoco(opt) {
     sh.aabb(d0, d1, 1.05, 2.95, -12.45, -12.4, DK); sh.aabb(d0, d1, 1.05, 2.95, -11.15, -11.1, DK);
     sh.aabb(Math.min(sg * 1.4, sg * 1.46), Math.max(sg * 1.4, sg * 1.46), .55, BOT + .04, -11.6, -7.2, BLU); sh.aabb(Math.min(sg * 1.4, sg * 1.46), Math.max(sg * 1.4, sg * 1.46), .55, BOT + .04, 3.4, 7.8, BLU); }
   g.add(sh.build(MAT.trainBody, true)); g.add(lens.build(opt.tail ? (opt.ai ? MH.aiTail : MH.tail) : MH.head));
-  const res = { g, axles, heads, beam: [0, 1.1, N1 + .6], len: 26 };
+  const res = { g, axles, heads, beam: [0, HSN.LAMP.y, HSN.LAMP.z], len: 26 };   /* the beam starts inside the nose, level with the lamps, and leaves through the nose surface (it used to start in the air in front of the tip) */
   if (ext) return res;
   /* cab. The driver sits inside the hull under the windscreen canopy; the hull is single-sided, so from inside it is invisible.
      An inner shell that follows the hull (drawn from inside only) makes every part of the cab and of the hollow nose opaque
@@ -3547,11 +3579,13 @@ function buildHSLoco(opt) {
   };
   const thrL = mkLever(.82, 0x1b4f9c, .24), brkL = mkLever(-.82, 0xb02a20, .24);
   const wipers = [];
-  /* two opposed wipers on the curved windscreen (pivots at the bottom centre, each sweeps its half) */
-  for (const sg of [1, -1]) { const p = new THREE.Group(); p.position.set(sg * .08, 2.715, ZW - .12); p.rotation.x = -1.08; p.userData.mirror = sg < 0; const a = new THREE.Mesh(new THREE.BoxGeometry(.018, 1.45, .015), new THREE.MeshLambertMaterial({ color: 0x15171a })); a.position.y = .72; p.add(a); g.add(p); wipers.push(p); }
+  /* two opposed wipers on the curved windscreen: hubs at the bottom centre, each sweeps only its own half, from parked
+     along the bottom edge up to just short of upright, so the two arms never cross (they used to swing 9 degrees past
+     upright and run over each other) */
+  for (const sg of [1, -1]) { const p = mkWiper(1.45); p.position.set(sg * .1, 2.715, ZW - .12); p.rotation.x = -1.08; p.userData.mirror = sg < 0; g.add(p); wipers.push(p); }
   const cv = S1.cv, tex = S1.tex, cv2 = S2.cv, tex2 = S2.tex;
   const spot = new THREE.SpotLight(0xf4f8ff, 0, 520, .3, .5, 1.1); spot.position.set(0, 1.3, N1 + .6); const tg = new THREE.Object3D(); tg.position.set(0, 1.2, 80); g.add(tg); spot.target = tg; g.add(spot);
-  return Object.assign(res, { cv, tex, cv2, tex2, thrL, brkL, wipers, wiperLen: 1.45, glassSpec: hsGlass, spot, cabMesh, draw: drawHSPanels, pantoMat: null, hideParked: true });
+  return Object.assign(res, { cv, tex, cv2, tex2, thrL, brkL, wipers, wiperLen: 1.45, wipeA: [-1.45, -.13], glassSpec: hsGlass, spot, cabMesh, draw: drawHSPanels, pantoMat: null, hideParked: true });
 }
 /* rear driving car of the high-speed set: the same nose turned round, with passenger doors and red tail lamps */
 function buildHSTail(rr, opt) {
@@ -5469,10 +5503,11 @@ const BIRDS = {
   crow: { size: .9, col: [.06, .06, .07], flap: 5, amp: .6, glide: .35, speed: 11, n: [2, 5], spread: 12 },
   gull: { size: 1.0, col: [.93, .93, .95], wcol: [.75, .76, .8], flap: 4, amp: .5, glide: .6, speed: 12, n: [3, 7], spread: 14 },
   stork: { size: 1.7, col: [.95, .95, .95], wcol: [.12, .12, .13], flap: 2.4, amp: .45, glide: .5, speed: 10, n: [1, 3], spread: 18 },
-  raptor: { size: 1.4, col: [.38, .26, .16], flap: 3, amp: .3, glide: .92, speed: 9, n: [1, 1], spread: 0 }
+  raptor: { size: 1.4, col: [.38, .26, .16], flap: 3, amp: .3, glide: .92, speed: 9, n: [1, 1], spread: 0 },
+  goose: { size: 1.2, col: [.46, .42, .37], wcol: [.36, .33, .3], flap: 3.4, amp: .55, glide: .12, speed: 15, n: [14, 24], spread: 0 }   /* the event's V */
 };
 const Birds = {
-  MAX: 90, flocks: [], t: 0, spawnT: 2,
+  MAX: 150, flocks: [], t: 0, spawnT: 2,
   init(scene) {
     /* body: ellipsoid trunk, round head, beak and a fanned tail merged into one mesh; vertex colours give a lighter
        belly and a coloured beak (they multiply the species colour, so a crow stays black and a gull gets a yellow bill) */
@@ -5504,6 +5539,17 @@ const Birds = {
     for (let i = 0; i < n; i++) f.birds.push({ ox: (Math.random() - .5) * S.spread, oy: (Math.random() - .5) * S.spread * .3, oz: (Math.random() - .5) * S.spread, ph: Math.random() * 6.283, sz: .85 + Math.random() * .3 });
     this.flocks.push(f);
   },
+  /* a flock that crosses the line for the 'birds' event: a V of geese (straight, steady formation) or a starling cloud;
+     o: { kind, x, y, z, vx, vz, n, form: 'v' | 'cloud' } */
+  flyover(o) {
+    if (!this.body) return null; const S = BIRDS[o.kind], n = Math.min(o.n, this.MAX - this.count()); if (n <= 0) return null;
+    const f = { kind: o.kind, S, x: o.x, y: o.y, z: o.z, vx: o.vx, vz: o.vz, vy: 0, alt: o.y - o.ground, ground: o.ground, sitting: false, t: 0, turn: 0, form: o.form, birds: [] };
+    for (let i = 0; i < n; i++) {
+      if (o.form === 'v') { const k = Math.floor((i + 1) / 2), sg = i % 2 ? 1 : -1; f.birds.push({ ox: sg * k * 2.6 + (Math.random() - .5) * .5, oy: (Math.random() - .5) * .6 + k * .12, oz: -k * 2.9 + (Math.random() - .5) * .6, ph: Math.random() * 6.283, sz: .9 + Math.random() * .2 }); }
+      else f.birds.push({ ox: (Math.random() - .5) * 16, oy: (Math.random() - .5) * 4, oz: (Math.random() - .5) * 16, ph: Math.random() * 6.283, sz: .85 + Math.random() * .3 });
+    }
+    this.flocks.push(f); return f;
+  },
   update(dt, G, cam) {
     if (!this.body) return; this.t += dt; const P = cam.position;
     if ((this.spawnT -= dt) < 0) { this.spawnT = 6 + Math.random() * 10; if (SettingsManager.v.fxDetail && QL.fx > 0) this.spawn(G, cam); }
@@ -5514,6 +5560,7 @@ const Birds = {
       if (f.sitting) { if (tr && Math.hypot(tr.x - f.x, tr.z - f.z) < 70) { f.sitting = false; f.vy = 4; f.alt = 15 + Math.random() * 25; f.t = 0; const a = Math.atan2(f.z - tr.z, f.x - tr.x) + (Math.random() - .5); f.vx = Math.cos(a) * S.speed; f.vz = Math.sin(a) * S.speed; } }
       else {
         if (f.kind === 'raptor') { const w = .12; const vx = f.vx; f.vx = vx * Math.cos(w * dt) - f.vz * Math.sin(w * dt); f.vz = vx * Math.sin(w * dt) + f.vz * Math.cos(w * dt); }   /* circling */
+        else if (f.form === 'v') { }   /* a V keeps its heading */
         else { f.turn += (Math.random() - .5) * dt * .6; f.turn = clamp(f.turn, -.35, .35); const w = f.turn * dt, vx = f.vx; f.vx = vx * Math.cos(w) - f.vz * Math.sin(w); f.vz = vx * Math.sin(w) + f.vz * Math.cos(w); }
         f.x += f.vx * dt; f.z += f.vz * dt; const want = f.ground + f.alt + Math.sin(f.t * .4) * 3; f.vy += ((want - f.y) * .6 - f.vy) * Math.min(1, dt * 1.5); f.y += f.vy * dt;
       }
@@ -5522,7 +5569,7 @@ const Birds = {
     /* instances */
     let nb = 0, nw = 0; const M0 = this.M0, M1 = this.M1, M2 = this.M2, e = this.e, q = this.q, c = this.c;
     for (const f of this.flocks) {
-      const S = f.S, yaw = Math.atan2(f.vx, f.vz), sitting = f.sitting, swirl = f.kind === 'starling' ? 1 : .35;
+      const S = f.S, yaw = Math.atan2(f.vx, f.vz), sitting = f.sitting, swirl = f.form === 'v' ? .05 : f.kind === 'starling' ? 1 : .35;
       for (const bd of f.birds) {
         if (nb >= this.MAX) break;
         const tt = this.t + bd.ph, ox = bd.ox + Math.sin(tt * .7) * S.spread * .15 * swirl, oz = bd.oz + Math.cos(tt * .55) * S.spread * .15 * swirl, oy = bd.oy + Math.sin(tt * .9) * .6;
@@ -6320,11 +6367,19 @@ function fireStart(E, c) { /* shared by wildfire */ }
 const EVDEFS = [
   { id: 'birds', name: 'Зграя птахів', cat: 'life', rar: 0, w: 3, cd: 240, dur: 40, desc: 'Птахи перетинають колію.', msg: 'Над колією пролітає зграя птахів',
     ok: c => isDay(c) && Env.rain < .4 && c.bio.dip < .5 && c.bio.tun < .1 && SettingsManager.v.fxDetail,
-    start(E, c) { const side = Math.random() < .5 ? -1 : 1, o = Events.P(260 + Math.random() * 120, side * 110, c), y = o.y + 35 + Math.random() * 40, ps = new PartSys(Events.scene, 60, false); E.ps = ps; E.data.ps = ps;
-      const hd = o.hd, rx = -Math.cos(hd), rz = Math.sin(hd), fx = Math.sin(hd), fz = Math.cos(hd), sp = 13 + Math.random() * 4;
-      for (let i = 0; i < 46; i++) { const k = Math.floor(i / 2) + 1, sg = i % 2 ? 1 : -1, bx = fx * (-k * 4.5) + rx * (sg * k * 3.2), bz = fz * (-k * 4.5) + rz * (sg * k * 3.2); ps.emit(o.x + bx, y + Math.random() * 3, o.z + bz, -rx * side * sp, 0, -rz * side * sp, 38, 1.6, 1.6, [.08, .08, .1], .95); }
-      for (let i = 0; i < 4; i++) setTimeout(() => { if (Sound.ok && !Sound.held) Sound.bird(); }, 600 * i + Math.random() * 400); return true; },
-    tick(E, dt, c) { E.ps.update(dt, camera, renderer); }, end(E) { E.ps.dispose(); } },
+    /* real birds with flapping wings (they used to be black particle dots): a V of geese, or near water a loose flock of
+       gulls, crosses the line low and close ahead of the train, so the shapes and the wing beats can be seen */
+    start(E, c) {
+      /* timed so the flock crosses the line some 50-100 m ahead of the train just as it gets there (the train covers
+         speed x crossing time meanwhile), low over the overhead wires */
+      const side = Math.random() < .5 ? -1 : 1, wet = c.bio.lw > .4 || c.bio.coast > .3 || c.bio.swamp > .3, geese = !wet || Math.random() < .35, sp = geese ? 14 + Math.random() * 3 : 12 + Math.random() * 2, L = 80;   /* geese, or gulls near water: big birds that read as birds, not specks */
+      const o = Events.P(clamp(Math.abs(c.v) * L / sp + 45 + Math.random() * 40, 60, 560), side * L, c), ground = Math.max(o.gy, o.y - 2);
+      const rx = -Math.cos(o.hd), rz = Math.sin(o.hd), fx = Math.sin(o.hd) * c.dir, fz = Math.cos(o.hd) * c.dir, k = (Math.random() - .5) * .4;
+      /* across the line, slightly angled along or against the travel direction */
+      const vx = (-rx * side + fx * k) * sp, vz = (-rz * side + fz * k) * sp;
+      const f = Birds.flyover({ kind: geese ? 'goose' : 'gull', form: geese ? 'v' : 'cloud', n: geese ? 15 + Math.floor(Math.random() * 10) : 9 + Math.floor(Math.random() * 7), x: o.x, y: ground + (geese ? 12 + Math.random() * 5 : 9.5 + Math.random() * 4), z: o.z, ground, vx, vz });   /* above the overhead wires (about 7 m), low enough to stay in view through the windscreen */
+      if (!f) return false; E.data.flock = f;
+      for (let i = 0; i < 4; i++) setTimeout(() => { if (Sound.ok && !Sound.held) Sound.bird(); }, 600 * i + Math.random() * 400); return true; } },
 
   { id: 'roadworks', name: 'Ремонт колії', cat: 'rail', rar: 0, w: 2.5, cd: 420, dur: 500, desc: 'Тимчасове обмеження швидкості 40 км/год на ділянці ремонту.', msg: 'Попереду ремонт колії: обмеження 40 км/год',
     ok: c => c.bio.urban < .5 && !Events.zoneBad(c.s + c.dir * 1100) && !Events.zoneBad(c.s + c.dir * 1400) && !Events.zoneBad(c.s + c.dir * 800) && c.v > 3,
@@ -7491,7 +7546,7 @@ function frame(now) {
   EnvMap.update(dt);
   cabLight.intensity = CamMgr.inside ? night * 1.0 * (G.cabinLight ? 1 : .3) : 0;
   if (G.wipers) UI.wipePhase += dt * 1.9; const sw = .5 + .5 * Math.sin(UI.wipePhase - Math.PI / 2), sweepNow = G.wipers ? sw : 0;
-  for (const w of L.wipers) { const a = lerp(-1.45, .15, sweepNow); w.rotation.z = w.userData.mirror ? -a : a; if (L.hideParked) w.visible = sweepNow > .02; } G.wipeSweep = sweepNow;
+  { const A = L.wipeA || [-1.45, .15], a = lerp(A[0], A[1], sweepNow); for (const w of L.wipers) { w.rotation.z = w.userData.mirror ? -a : a; if (L.hideParked) w.visible = sweepNow > .02; } } G.wipeSweep = sweepNow;
   G.drawT = (G.drawT || 0) - dt; if (G.drawT < 0 && id === 'cab') { G.drawT = .066; (L.draw || drawCabPanels)(L, p, p.v * 3.6, p.throttle, _T(Env.wxName)); }
   L.thrL.rotation.x = lerp(.55, -.55, p.throttle); L.brkL.rotation.x = lerp(.55, -.55, p.brake);
   sky.update(dt, G.t, Env.tunnel); precip.update(dt, camera.position, G.camVel, G.t); CabGlass.update(dt, G);
