@@ -1174,7 +1174,10 @@ const Rail = {
   curv(s, hd) {
     const sec = Math.floor(s / 450), t = (s - sec * 450) / 450, sd = this.seed;
     const kt = q => { if (H(sd, q, 3) < .36) return 0; const sg = H(sd, q, 4) < .5 ? -1 : 1; return sg / (620 + H(sd, q, 5) * 2600); };
-    let k = lerp(kt(sec), kt(sec + 1), sm(0, 1, t)) - hd * .00025;
+    /* the heading is pulled back towards the start heading so the line never winds round; behind the start (s < 0) the
+       line is integrated backwards, so the pull has the other sign there: with the same sign it pushed the heading away
+       exponentially, the line had turned 2-3 full circles by -20 km and wound into knots a few metres wide by -40 km */
+    let k = lerp(kt(sec), kt(sec + 1), sm(0, 1, t)) - hd * (s >= 0 ? .00025 : -.00025);
     const z = this.zoneAt(s), d = Math.abs(s - z.c);
     if (z.kind === 'junction') { const dd = z.sg * (s - z.sj); k *= 1 - sm(0, 120, 560 - Math.abs(s - z.sj)); if (dd > 0 && dd < z.Lb && this.route[z.zi]) k += -z.side * (z.Th / z.Lb) * (1 - Math.cos(2 * Math.PI * dd / z.Lb)); }
     if (z.kind === 'station') k *= 1 - sm(0, 150, 560 - d);
