@@ -6291,8 +6291,10 @@ function slideStart(E, c, n, kind) {
   const side = Math.random() < .5 ? -1 : 1, off = 650 + Math.random() * 250, u0 = side * (95 + Math.random() * 40), u1 = side * 9, g = Events.add(E, rocksGroup(n, kind === 'snow' ? 0xf0f4f8 : 0x77746e)), rocks = [];
   const s0 = c.s + c.dir * off, bi = Rail.bio(s0);
   for (let i = 0; i < n; i++) {
-    const ds = (Math.random() - .5) * 40, so = s0 + ds, a0 = {}, a1 = {}; ptAt(so, u0 + Math.random() * 12, a0); ptAt(so + (Math.random() - .5) * 8, side * (8 + Math.random() * 12), a1);
-    const y0 = meshH(so, u0) + 6, y1 = meshH(so, side * 10);
+    /* the rocks stop beside the line: 9.5-20.5 m from track 1 on its side, or as far beyond track 2 on the other side
+       (they used to stop 8 m from track 1 on both sides, i.e. 3.4 m from track 2), on the ground where they stop */
+    const ds = (Math.random() - .5) * 40, so = s0 + ds, s1 = so + (Math.random() - .5) * 8, d1 = 9.5 + Math.random() * 11, uE = side > 0 ? d1 : -U2 - d1, a0 = {}, a1 = {}; ptAt(so, u0 + Math.random() * 12, a0); ptAt(s1, uE, a1);
+    const y0 = meshH(so, u0) + 6, y1 = meshH(s1, uE);
     rocks.push({ m: g.children[i], x0: a0.x, z0: a0.z, y0, x1: a1.x, z1: a1.z, y1, d: Math.random() * 3.5, T: 5 + Math.random() * 3.5, r: .8 + Math.random() }); g.children[i].visible = false;
   }
   E.data = { rocks, side, s0, kind }; const a = {}; ptAt(s0, side * 50, a); E.data.x = a.x; E.data.z = a.z; E.data.y = terrH(bi, side * 50, a.x, a.z) + 8;
@@ -6300,10 +6302,12 @@ function slideStart(E, c, n, kind) {
   const d = Math.hypot(a.x - c.cam.x, a.z - c.cam.z); Sound.rumble(d / 343, 9, clamp(1.1 - d / 2500, .12, 1) * .6, 120);
   E.done = (cc) => (cc.s - s0) * cc.dir > 420 && E.t > 20;
 }
+/* rolling rocks: smoothstep from the slope to the stop (the old curve reached 1.8 at the end, so every rock flew 80 %
+   past its stopping place, across both tracks and into the ground on the far side) */
 function slideTick(E, dt, c) {
   const D = E.data; let dust = 0;
   for (const r of D.rocks) {
-    const t = E.t - r.d; if (t < 0) continue; r.m.visible = true; const f = clamp(t / r.T, 0, 1), e = f * f * (3 - 2 * f * .6), bounce = Math.abs(Math.sin(t * 5)) * (1 - f) * 1.4 * r.r;
+    const t = E.t - r.d; if (t < 0) continue; r.m.visible = true; const f = clamp(t / r.T, 0, 1), e = f * f * (3 - 2 * f), bounce = Math.abs(Math.sin(t * 5)) * (1 - f) * 1.4 * r.r;
     r.m.position.set(r.x0 + (r.x1 - r.x0) * e, r.y0 + (r.y1 - r.y0) * e + bounce + r.r * .5, r.z0 + (r.z1 - r.z0) * e); r.m.rotation.x += dt * 3 * (1 - f); r.m.rotation.z += dt * 2 * (1 - f);
     if (f < 1 && Math.random() < dt * 8) Events.ps.dust.emit(r.m.position.x, r.m.position.y, r.m.position.z, (Math.random() - .5) * 4, 2 + Math.random() * 3, (Math.random() - .5) * 4, 4, 4, 22, D.kind === 'snow' ? [.95, .97, 1] : [.5, .46, .4], .4, { drag: .5 });
   }
@@ -6595,6 +6599,7 @@ const CamMgr = {
       this.applyLook(L, inp, dt, sens, lim);
       const sh = id === 'cab' || id === 'pass' ? shake(1) : shake(.4);
       const hl = (id === 'cab' || id === 'pass') ? train.def.headLean : 0, ac = clamp(S.acc || 0, -1.4, 1.4), lt = clamp(S.lat || 0, -3, 3); p.set(local[0] + sh[0] - lt * .014 * hl, local[1] + sh[1] - Math.abs(lt) * .004 * hl, local[2] - ac * .07 * hl); it.g.updateMatrixWorld(); it.g.localToWorld(p);
+      if (id === 'rear') this.clampCam(p, S, 1.2, phys.s - phys.dir * (train.length + 11.5));   /* 11.5 m behind the last car: on a curve in a cutting that point lies in the slope (searched from the tail: a long train is longer than the search range) */
       e.set(L.pitch + (id === 'cab' ? train.def.cabPitch || 0 : 0), baseYaw + L.yaw, 0); q.setFromEuler(e); q.premultiply(it.g.getWorldQuaternion(new THREE.Quaternion()));
       cam.position.copy(p); cam.quaternion.copy(q); wantFov = fov + inp.zoom * -2 * 0; this.zoomF = clamp((this.zoomF || 0) + inp.zoom * .02, -.3, .5); wantFov = fov * (1 + this.zoomF);
     } else if (id === 'walk') {
@@ -6658,13 +6663,15 @@ const CamMgr = {
     const p = {}, G0 = this._g || (this._g = { s: hint || 0 }); let best = Math.abs((hint || 0) - G0.s) > 400 ? hint : G0.s, bd = 1e18;
     const d2 = ss => { Rail.pose(ss, p); const dx = x - p.x, dz = z - p.z; return dx * dx + dz * dz; };
     bd = d2(best);
-    for (let st = 96; st >= 1.5; st /= 2) for (let k = -3; k <= 3; k++) { if (!k) continue; const ss = best + k * st, d = d2(ss); if (d < bd) { bd = d; best = ss; } }
+    /* coarse steps from 384 m: the search reaches about ±1.1 km (it used to reach ±290 m, less than a long train plus the
+       orbit camera's distance, so the far cameras could be clamped against the ground of the wrong place) */
+    for (let st = 384; st >= 1.5; st /= 2) for (let k = -3; k <= 3; k++) { if (!k) continue; const ss = best + k * st, d = d2(ss); if (d < bd) { bd = d; best = ss; } }
     G0.s = best; Rail.pose(best, p); const c = Math.cos(p.hd), sn = Math.sin(p.hd), u = -(x - p.x) * c + (z - p.z) * sn, b = Rail.bio(best);
     return { s: best, u, ty: p.y, h: meshH(best, u), tin: b.tin, tun: b.tun };
   },
   /* keep external cameras above the ground (never under the map) and out of mountains: either inside the tunnel tube or above the mountain */
-  clampCam(p, S, above) {
-    const g = this.ground(p.x, p.z, S.phys.s), a = above == null ? 1.8 : above;
+  clampCam(p, S, above, hint) {
+    const g = this.ground(p.x, p.z, hint == null ? S.phys.s : hint), a = above == null ? 1.8 : above;   /* hint: where along the line to look (the nearest-point search covers about ±290 m) */
     /* inside a tunnel section and below the rock surface: the camera stays inside the tube's cross-section (pulled back
        sideways onto the arch and down under the crown) instead of jumping onto the mountain or into the rock */
     if (g.tin > 0 && (Math.abs(g.u - TUN.uc) < TUN.hw - .7 || p.y < g.h - .5)) {
@@ -6717,6 +6724,9 @@ const CamMgr = {
     want.x += Math.sin(tt * .7 + C.az) * .35 * hh; want.y += Math.sin(tt * .53 + C.az * 2) * .25 * hh; want.z += Math.cos(tt * .61 + C.az) * .35 * hh;
     if (C.type !== 'tunnel' && C.type !== 'tunnelside') this.clampCam(want, S, C.type === 'low' ? .7 : C.type === 'cat' ? .15 : 2.2);
     if (C.first) { C.first = false; cam.position.copy(want); if (C.type === 'cat') C.tgt.copy(look); } else cam.position.lerp(want, 1 - Math.exp(-dt * kpos));
+    /* the eased path towards the shot position can cut through a hill (the target itself was checked): keep the camera
+       above the ground on the way as well */
+    if (C.type !== 'tunnel' && C.type !== 'tunnelside') this.clampCam(cam.position, S, C.type === 'cat' ? .15 : .6);
     C.tgt.lerp(look, 1 - Math.exp(-dt * klook)); if (C.tgt.lengthSq() < 1) C.tgt.copy(look);
     cam.lookAt(C.tgt);
   }
@@ -7316,7 +7326,7 @@ function layoutVars() {
 }
 setInterval(() => { try { layoutVars(); } catch (e) { } }, 1000);
 /* panels that grow or shrink (junction tag, lesson text, banner) re-measure the layout at once, not on the next tick */
-try { if (window.ResizeObserver) { const ro = new ResizeObserver(() => { try { layoutVars(); } catch (e) { } }); for (const id of ['hudL', 'hudC', 'hudR', 'btns', 'thr', 'speedcard', 'speedbox', 'bp', 'stn', 'info', 'lesson', 'guide', 'banner', 'evcard']) { const e = document.getElementById(id); if (e) ro.observe(e); } } } catch (e) { }
+try { if (window.ResizeObserver) { let roF = 0; const ro = new ResizeObserver(() => { if (roF) return; roF = requestAnimationFrame(() => { roF = 0; try { layoutVars(); } catch (e) { } }); });   /* next frame: setting the layout variables inside the callback resized the panels again ("ResizeObserver loop" error) */ for (const id of ['hudL', 'hudC', 'hudR', 'btns', 'thr', 'speedcard', 'speedbox', 'bp', 'stn', 'info', 'lesson', 'guide', 'banner', 'evcard']) { const e = document.getElementById(id); if (e) ro.observe(e); } } } catch (e) { }
 
 function initEngine() {
   if (engineReady) return; engineReady = true;
