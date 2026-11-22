@@ -816,3 +816,43 @@ bitmap textures except the existing window textures), same mechanics, cameras, t
 * Check (same method as in section 17, free mode, drag and gamepad, 4 settings): orbit "right/down" by default,
   horizontal inversion "left/down", vertical inversion "right/up", both "left/up"; chase, cab and map unchanged
   ("right/up" by default).
+
+## Update 22 Nov 2026 (20): stress test — 1000+ game days, every event 100+ times
+### How it was run
+* Four worlds in parallel, each 400 game days (1,600 per run): free journey (classic, 10 cars), scenic (HS, cinematic
+  camera), event sandbox (HS, starting backwards, turnarounds), timetable (classic, 12 cars, a stop at every station).
+  The game loop was stepped by hand (50 ms of game time per frame, drawing skipped except sampled real frames for GPU
+  resource counts); one game day = 2 min of game time to fit the run. An autopilot drove with cruise control, stopped at
+  stations (doors, passengers), turned round, changed cars and trains at stops, switched cameras every ~45 s, cycled the
+  weather, switched the language and reloaded from the save. Every event was started 100+ times (rocket: see below);
+  where an event's conditions were not near, the test jumped ahead like the sandbox button.
+* Collected: page errors, console errors and warnings (with the system from the stack), exceptions, NaN in train/camera/
+  environment, event objects left in the scene, temporary speed limits left behind, event objects on the rails or
+  ballast (every vertex mapped to track coordinates), fallen tree floating/buried, camera below the ground, broken track
+  geometry, heap / GPU geometries / textures / scene objects / DOM nodes over time.
+### Found and fixed (first run → final run)
+1. Track behind the start wound into knots: the heading pull-back term had the wrong sign in the backward integration
+   (s < 0); heading at -40 km 260-1380 rad, loops a few metres wide. Reached by turning round and driving back past the
+   start. Fixed (sign flips for s < 0; the line for s >= 0 is unchanged). Final run: 0 broken-track samples.
+2. Fallen tree lay across both tracks (the template cylinder grows against the yaw; height taken from the rail, not the
+   ground): 81 of 136 on the rails + 8 on the ballast, 17 mostly buried. Now root ~25 m out, top 9.5 m from the outer
+   rail, on the terrain, spot away from crossings, roads, junction tracks, bridges, tunnels, stations. Final: 0 of 125,
+   nearest point 5.5 m from a rail.
+3. Roadworks: lamps, cones and workers on the track-2 side stood on track 2 (single-track layout): 223 of 223. Final:
+   0 of 221 (cones/lamps on the ballast shoulder 2 m from the rail, intended).
+4. Landslide / rockfall / avalanche: the easing curve ended at 1.8, every rock flew 80 % past its stop, across both
+   tracks; stops on the track-2 side were 3.4 m from it. Final: 0 of 332, nearest 6.7 m from a rail.
+5. Rear-of-train camera below the ground on curves in cuttings (159 samples); cinematic/photo/orbit camera occasionally
+   below the ground (13); the camera ground search reached only ±290 m. Rear camera clamped (searched from the tail),
+   cinematic path clamped, search ±1.1 km. Final: 0.
+6. "ResizeObserver loop" browser error on layout changes (24). Layout deferred to the next frame. Final: 0.
+### Final run summary
+* 1,600 game days, 3,826 km, 3,461 event starts, 397 station stops, 56 turnarounds, 39 reloads from the save:
+  0 JavaScript errors or warnings, 0 exceptions, 0 NaN, 0 event objects left behind, 0 temporary limits left behind,
+  0 objects on the rails, 0 cameras under the ground, 0 broken track. Heap, GPU geometries and scene objects fluctuate
+  within a band and do not grow (no leak seen).
+* Events below 100 starts: the rocket (72 over both runs) — a launch needs a spaceport, present in about one 30-km
+  region in three; no errors in any launch. The fallen tree finds a spot in 86 % of the places where its forest
+  condition holds (the test's many retries at the same unsuitable spot inflate its failure count).
+* Not done: real phones, real audio output, hardware GPU; the full statistics page (per system, per event, stability)
+  was delivered separately as EndlessRails-stress-test.html.
