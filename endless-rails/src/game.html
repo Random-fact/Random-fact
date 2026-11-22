@@ -6268,20 +6268,21 @@ function tempLimit(E, a, b, v, label) { E.temp = E.temp || []; E.temp.push(Limit
 function skyDir(az, el, R) { return new THREE.Vector3(Math.sin(az) * Math.cos(el) * R, Math.sin(el) * R, Math.cos(az) * Math.cos(el) * R); }
 function signTex(txt) { return makeTextCanvas(128, 128, (g, w, h) => { g.fillStyle = '#fff'; g.beginPath(); g.arc(64, 64, 62, 0, TAU); g.fill(); g.strokeStyle = '#d9202a'; g.lineWidth = 12; g.stroke(); g.fillStyle = '#111'; g.font = '600 60px Oswald, Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, 64, 70); }); }
 function rocksGroup(n, col) { const g = new THREE.Group(), geo = new THREE.IcosahedronGeometry(1, 0); geo.shared = true; for (let i = 0; i < n; i++) { const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: col || 0x77746e })); m.scale.set(.8 + Math.random() * 1.8, .6 + Math.random() * 1.2, .8 + Math.random() * 1.6); m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6); g.add(m); } return g; }
-/* where a fallen tree can lie: 650-930 m ahead on either side, the top 9.5 m from the outer rail and the root about 25 m
-   out, on even ground, away from level crossings, settlement roads, riverside roads, junction tracks, depots, stations,
-   bridges, tunnels, cuttings with walls, under- and overbridges; the most even spot wins */
+/* where a fallen tree can lie: 650-1040 m ahead on either side, the top 9.5 m from the outer rail and the root about 25 m
+   out, on fairly even ground, away from level crossings, settlement roads, riverside roads, junction tracks, depots,
+   stations, bridges, tunnels, under- and overbridges (a retaining wall does not matter: the tree lies beyond it, on the
+   ground above the cutting); the most even spot wins */
 function fallenTreeSpot(c) {
   const cand = [];
-  for (let k = 0; k < 9; k++) for (const side of [1, -1]) {
-    const s0 = c.s + c.dir * (650 + k * 35), b = Rail.bio(s0), z = Rail.zoneAt(s0);
-    if (Events.zoneBad(s0) || z.kind === 'junction' || b.jz || b.deck || b.dip > .3 || b.tun > .02 || b.tin > -80 || b.wall > .05 || b.ud || (b.ob && Math.abs(s0 - b.ob.s) < 60) || b.stf > .02 || b.dep > .02) continue;
+  for (let k = 0; k < 14; k++) for (const side of [1, -1]) {
+    const s0 = c.s + c.dir * (650 + k * 30), b = Rail.bio(s0), z = Rail.zoneAt(s0);
+    if (Events.zoneBad(s0) || z.kind === 'junction' || b.jz || b.deck || b.dip > .3 || b.tun > .02 || b.tin > -80 || b.ud || (b.ob && Math.abs(s0 - b.ob.s) < 60) || b.stf > .02 || b.dep > .02) continue;
     let road = false;
     for (let zi = z.zi - 1; zi <= z.zi + 1 && !road; zi++) { const q = Rail.zone(zi), gz = Rail.grade(q); if (Rail.xings(q).some(x => Math.abs(x - s0) < 70) || Rail.exits(q).some(e => Math.abs(e.s - s0) < 70) || (gz.river && Math.abs(gz.river.s - s0) < 70)) road = true; }
     const uT = side > 0 ? 9.5 : -U2 - 9.5, uR = side > 0 ? 25 : -U2 - 25, sR = s0 + (H(Math.floor(s0), side, 471) < .5 ? -7 : 7);
     if (road || Roads.near(s0, uR, 30) || Roads.near(s0, uT, 30)) continue;
     const hT = meshH(s0, uT), hR = meshH(sR, uR), hM = meshH((s0 + sR) / 2, (uT + uR) / 2), dev = Math.abs(hM - (hT + hR) / 2), slope = Math.abs(hR - hT) / 16;
-    if (dev > 1.2 || slope > .35) continue;
+    if (dev > 1.6 || slope > .45) continue;
     cand.push({ s0, sR, side, uT, uR, hT, hR, score: dev + slope * 3 + k * .05 + (side > 0 ? 0 : .02) });
   }
   cand.sort((a, b) => a.score - b.score); return cand[0] || null;
