@@ -6268,6 +6268,24 @@ function tempLimit(E, a, b, v, label) { E.temp = E.temp || []; E.temp.push(Limit
 function skyDir(az, el, R) { return new THREE.Vector3(Math.sin(az) * Math.cos(el) * R, Math.sin(el) * R, Math.cos(az) * Math.cos(el) * R); }
 function signTex(txt) { return makeTextCanvas(128, 128, (g, w, h) => { g.fillStyle = '#fff'; g.beginPath(); g.arc(64, 64, 62, 0, TAU); g.fill(); g.strokeStyle = '#d9202a'; g.lineWidth = 12; g.stroke(); g.fillStyle = '#111'; g.font = '600 60px Oswald, Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, 64, 70); }); }
 function rocksGroup(n, col) { const g = new THREE.Group(), geo = new THREE.IcosahedronGeometry(1, 0); geo.shared = true; for (let i = 0; i < n; i++) { const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: col || 0x77746e })); m.scale.set(.8 + Math.random() * 1.8, .6 + Math.random() * 1.2, .8 + Math.random() * 1.6); m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6); g.add(m); } return g; }
+/* where a fallen tree can lie: 650-930 m ahead on either side, the top 9.5 m from the outer rail and the root about 25 m
+   out, on even ground, away from level crossings, settlement roads, riverside roads, junction tracks, depots, stations,
+   bridges, tunnels, cuttings with walls, under- and overbridges; the most even spot wins */
+function fallenTreeSpot(c) {
+  const cand = [];
+  for (let k = 0; k < 9; k++) for (const side of [1, -1]) {
+    const s0 = c.s + c.dir * (650 + k * 35), b = Rail.bio(s0), z = Rail.zoneAt(s0);
+    if (Events.zoneBad(s0) || z.kind === 'junction' || b.jz || b.deck || b.dip > .3 || b.tun > .02 || b.tin > -80 || b.wall > .05 || b.ud || (b.ob && Math.abs(s0 - b.ob.s) < 60) || b.stf > .02 || b.dep > .02) continue;
+    let road = false;
+    for (let zi = z.zi - 1; zi <= z.zi + 1 && !road; zi++) { const q = Rail.zone(zi), gz = Rail.grade(q); if (Rail.xings(q).some(x => Math.abs(x - s0) < 70) || Rail.exits(q).some(e => Math.abs(e.s - s0) < 70) || (gz.river && Math.abs(gz.river.s - s0) < 70)) road = true; }
+    const uT = side > 0 ? 9.5 : -U2 - 9.5, uR = side > 0 ? 25 : -U2 - 25, sR = s0 + (H(Math.floor(s0), side, 471) < .5 ? -7 : 7);
+    if (road || Roads.near(s0, uR, 30) || Roads.near(s0, uT, 30)) continue;
+    const hT = meshH(s0, uT), hR = meshH(sR, uR), hM = meshH((s0 + sR) / 2, (uT + uR) / 2), dev = Math.abs(hM - (hT + hR) / 2), slope = Math.abs(hR - hT) / 16;
+    if (dev > 1.2 || slope > .35) continue;
+    cand.push({ s0, sR, side, uT, uR, hT, hR, score: dev + slope * 3 + k * .05 + (side > 0 ? 0 : .02) });
+  }
+  cand.sort((a, b) => a.score - b.score); return cand[0] || null;
+}
 function slideStart(E, c, n, kind) {
   const side = Math.random() < .5 ? -1 : 1, off = 650 + Math.random() * 250, u0 = side * (95 + Math.random() * 40), u1 = side * 9, g = Events.add(E, rocksGroup(n, kind === 'snow' ? 0xf0f4f8 : 0x77746e)), rocks = [];
   const s0 = c.s + c.dir * off, bi = Rail.bio(s0);
@@ -6303,13 +6321,19 @@ const EVDEFS = [
   { id: 'roadworks', name: 'Ремонт колії', cat: 'rail', rar: 0, w: 2.5, cd: 420, dur: 500, desc: 'Тимчасове обмеження швидкості 40 км/год на ділянці ремонту.', msg: 'Попереду ремонт колії: обмеження 40 км/год',
     ok: c => c.bio.urban < .5 && !Events.zoneBad(c.s + c.dir * 1100) && !Events.zoneBad(c.s + c.dir * 1400) && !Events.zoneBad(c.s + c.dir * 800) && c.v > 3,
     start(E, c) { const s0 = c.s + c.dir * 1150, a = s0 - 220, b = s0 + 220, B = new Builder(), L = new Builder(), tex = signTex('40'), mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
-      for (let s = a; s <= b; s += 22) for (const sg of [-1, 1]) { const q = {}; ptAt(s, sg * (3.4 + Math.random() * .8), q);
+      /* the repair is on the player's track (u = 0): lamps, cones and workers stand beside it on the outer side, and on the
+         other side beyond track 2 (u = -U2), never on track 2 itself, which keeps carrying trains (they used to stand at
+         u = -3.4..-5.4, right on its rails); the machines stand off the bed, aligned with the line, on the ground */
+      const side = (sg, d) => sg > 0 ? d : -U2 - d, gnd = (s, u, q) => { ptAt(s, u, q); q.y = Math.abs(u) < BEDW + .2 || (u < 0 && u > -U2 - BEDW - .2) ? q.y : meshH(s, u) + .4; return q; };
+      for (let s = a; s <= b; s += 22) for (const sg of [-1, 1]) { const q = gnd(s, side(sg, 3.4 + Math.random() * .8), {});
         if (Math.random() < .55) { B.aabb(q.x - .22, q.x + .22, q.y - .4, q.y + .5, q.z - .15, q.z + .15, [.95, .45, .08]); B.aabb(q.x - .14, q.x + .14, q.y + .5, q.y + .75, q.z - .12, q.z + .12, [.95, .8, .1]); B.aabb(q.x - .26, q.x + .26, q.y + .72, q.y + .8, q.z - .26, q.z + .26, [.95, .8, .1]); }
-        const cn = {}; ptAt(s + 11, sg * 3.0, cn); B.add(TPL.cone, cn.x, cn.y - .4, cn.z, .45, .75, .45, 0, 0, [.95, .35, .05]); }
-      for (let k = 0; k < 2; k++) { const s = a + 70 + k * 180, q = {}; ptAt(s, -9, q); B.aabb(q.x - 1.4, q.x + 1.4, q.y - .3, q.y + .9, q.z - 2.2, q.z + 2.2, [.95, .72, .08]); B.aabb(q.x - .9, q.x + .9, q.y + .9, q.y + 2.0, q.z - .6, q.z + .6, [.9, .66, .06]); B.aabb(q.x - .12, q.x + .12, q.y + 2.0, q.y + 3.8, q.z + .6, q.z + 3.6, [.9, .66, .06]); B.aabb(q.x - 1.3, q.x + 1.3, q.y - .5, q.y - .1, q.z - 2.4, q.z + 2.4, [.1, .1, .1]); }
-      for (const s of [a - 45, b + 45]) { const q = {}; ptAt(s, 4.6, q); B.aabb(q.x - .05, q.x + .05, q.y - .4, q.y + 2.6, q.z - .05, q.z + .05, [.5, .5, .52]); const m = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.4), mat); m.position.set(q.x, q.y + 2.4, q.z); m.rotation.y = q.hd + (s < s0 ? 0 : Math.PI); Events.add(E, m); const L2 = new THREE.Mesh(new THREE.BoxGeometry(.3, .3, .3), MAT.flash); L2.position.set(q.x, q.y + 3.3, q.z); Events.add(E, L2); }
+        const cn = gnd(s + 11, side(sg, 3.0), {}); B.add(TPL.cone, cn.x, cn.y - .4, cn.z, .45, .75, .45, 0, 0, [.95, .35, .05]); }
+      for (let k = 0; k < 2; k++) { const s = a + 70 + k * 180, u = -U2 - 10, q = {}; ptAt(s, u, q); const y = meshH(s, u), hd = q.hd, at = (ds, du) => { const o = {}; ptAt(s + ds, u + du, o); return o; };
+        B.add(TPL.boxB, q.x, y - .5, q.z, 2.6, .4, 4.8, hd, 0, [.1, .1, .1]); B.add(TPL.boxB, q.x, y - .1, q.z, 2.8, 1.2, 4.4, hd, 0, [.95, .72, .08]);
+        { const o = at(-.6, 0); B.add(TPL.boxB, o.x, y + 1.1, o.z, 1.8, 1.1, 1.2, hd, 0, [.9, .66, .06]); } { const o = at(2.1, 0); B.add(TPL.boxB, o.x, y + 2.2, o.z, .24, 1.8, 3.0, hd, 0, [.9, .66, .06]); } }
+      for (const s of [a - 45, b + 45]) { const q = gnd(s, 5.3, {}); B.aabb(q.x - .05, q.x + .05, q.y - .4, q.y + 2.6, q.z - .05, q.z + .05, [.5, .5, .52]); const m = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.4), mat); m.position.set(q.x, q.y + 2.4, q.z); m.rotation.y = q.hd + (s < s0 ? 0 : Math.PI); Events.add(E, m); const L2 = new THREE.Mesh(new THREE.BoxGeometry(.3, .3, .3), MAT.flash); L2.position.set(q.x, q.y + 3.3, q.z); Events.add(E, L2); }
       const mesh = B.build(MAT.lit, false); if (mesh) { mesh.geometry.shared = false; Events.add(E, mesh); }
-      const wk = new Builder(); for (let i = 0; i < 9; i++) { const s = a + 20 + i * 22 + Math.random() * 8, q = {}; ptAt(s, (i % 2 ? 1 : -1) * (4.2 + Math.random() * 1.2), q); wk.aabb(q.x - .22, q.x + .22, q.y - .4, q.y + .45, q.z - .15, q.z + .15, [.12, .2, .45]); wk.aabb(q.x - .26, q.x + .26, q.y + .45, q.y + 1.15, q.z - .18, q.z + .18, [.98, .5, .08]); wk.add(TPL.ico, q.x, q.y + 1.3, q.z, .34, .3, .34, 0, 0, [.95, .85, .2]); }
+      const wk = new Builder(); for (let i = 0; i < 9; i++) { const s = a + 20 + i * 22 + Math.random() * 8, q = gnd(s, side(i % 2 ? 1 : -1, 4.2 + Math.random() * 1.2), {}); wk.aabb(q.x - .22, q.x + .22, q.y - .4, q.y + .45, q.z - .15, q.z + .15, [.12, .2, .45]); wk.aabb(q.x - .26, q.x + .26, q.y + .45, q.y + 1.15, q.z - .18, q.z + .18, [.98, .5, .08]); wk.add(TPL.ico, q.x, q.y + 1.3, q.z, .34, .3, .34, 0, 0, [.95, .85, .2]); }
       const wm = wk.build(MAT.lit, false); if (wm) Events.add(E, wm);
       tempLimit(E, Math.min(a, b), Math.max(a, b), 40, 'ремонт колії'); E.data = { a, b, s0 }; E.done = cc => (cc.s - b) * cc.dir > 380 && (cc.s - a) * cc.dir > 0; return true; } },
 
@@ -6402,9 +6426,23 @@ const EVDEFS = [
 
   { id: 'tree', name: 'Повалене дерево', cat: 'ground', rar: 1, w: 1.6, cd: 600, dur: 60, desc: 'Дерево лежить поруч із колією; обмеження 40 км/год.', msg: 'Біля колії лежить повалене дерево',
     ok: c => c.bio.forest > .3 && c.bio.urban < .2 && !Events.zoneBad(c.s + c.dir * 700) && (Env.wind > .3 || Math.random() < .3),
-    start(E, c) { const side = Math.random() < .5 ? -1 : 1, s0 = c.s + c.dir * 650, B = new Builder(), a = {}; ptAt(s0, side * 4.1, a); const b = {}; ptAt(s0 + 6, side * 20, b); const yaw = Math.atan2(b.x - a.x, b.z - a.z), len = Math.hypot(b.x - a.x, b.z - a.z);
-      B.add(TPL.cyl, (a.x + b.x) / 2, a.y - .1, (a.z + b.z) / 2, .9, len, .9, yaw, Math.PI / 2 - .03, [.34, .24, .16]); for (let k = 0; k < 7; k++) { const f = .45 + k * .08; B.add(TPL.ico, a.x + (b.x - a.x) * f + (Math.random() - .5) * 3, a.y + .7 + Math.random(), a.z + (b.z - a.z) * f + (Math.random() - .5) * 3, 4.5, 3.2, 4.5, 0, 0, [.12 + Math.random() * .05, .3 + Math.random() * .08, .1]); }
-      const m = B.build(MAT.lit, false); Events.add(E, m); tempLimit(E, s0 - 200 * c.dir, s0 + 200 * c.dir, 40, 'дерево'); E.done = cc => (cc.s - s0) * cc.dir > 380; return true; } },
+    /* a tree from the forest edge has fallen towards the line and lies on the ground beside it: the root about 25 m out,
+       the top 9.5 m from the outer rail of either track, so nothing touches the rails, the ballast, the overhead-line
+       masts, the cable trough or the km posts. (The trunk used to run from 12 m out back across both tracks: the
+       template cylinder grows from its base against the yaw direction, so the log was drawn the wrong way round.) */
+    start(E, c) {
+      const T = fallenTreeSpot(c); if (!T) return false;
+      const B = new Builder(), r = {}, t = {}; ptAt(T.sR, T.uR, r); ptAt(T.s0, T.uT, t);
+      const yR = T.hR + .38, yT = T.hT + .3, dx = t.x - r.x, dz = t.z - r.z, L = Math.hypot(dx, dz, yT - yR);
+      /* base at the root, axis towards the top: yaw = atan2(-dx, -dz), pitch = acos(dy / L) (see Builder.add) */
+      B.add(TPL.cyl, r.x, yR, r.z, .9, L, .9, Math.atan2(-dx, -dz), Math.acos(clamp((yT - yR) / L, -1, 1)), [.34, .24, .16]);
+      B.add(TPL.ico, r.x, yR + .35, r.z, 2.1, 2.3, 2.1, Math.atan2(dx, dz), 0, [.27, .2, .14]);   /* root plate */
+      for (let k = 0; k < 7; k++) {
+        const f = .52 + k * .08, sb = T.sR + (T.s0 - T.sR) * f + (Math.random() - .5) * 2.4, ub = T.uR + (T.uT - T.uR) * f + (Math.random() - .5) * 2.4, q = {}; ptAt(sb, ub, q);
+        B.add(TPL.ico, q.x, meshH(sb, ub) + 1.1 + Math.random() * .5, q.z, 4.5, 3.2, 4.5, 0, 0, [.12 + Math.random() * .05, .3 + Math.random() * .08, .1]);
+      }
+      const m = B.build(MAT.lit, false); Events.add(E, m); const s0 = T.s0; E.data = { s0, side: T.side };
+      tempLimit(E, s0 - 200 * c.dir, s0 + 200 * c.dir, 40, 'дерево'); E.done = cc => (cc.s - s0) * cc.dir > 380; return true; } },
 
   { id: 'festive', name: 'Святкова станція', cat: 'life', rar: 1, w: 1.6, cd: 1200, dur: 500, desc: 'Станцію прикрашено прапорцями й кулями, на платформі більше людей.', msg: 'Наступна станція святково прикрашена',
     ok: c => { const z = Rail.nextStation(c.s, c.dir); const d = (z.c - c.s) * c.dir; return d > 800 && d < 2600 && z.sk !== 'forest'; },
