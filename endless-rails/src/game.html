@@ -1522,27 +1522,6 @@ function initMaterials() {
 }
 /* ===== Glow points: additive light halos. Static ones are baked per chunk (street, platform, tunnel lamps: one draw call per chunk,
    brightness follows the night), dynamic ones (train lamps, signals, crossings, vehicles, aircraft) are rewritten every frame ===== */
-/* the glare of a headlight seen from in front: a hot core, a star of rays and a horizontal streak, stronger the more
-   directly the lamp points at the camera (like a car's headlights at night) */
-const LampFlare = {
-  n: 0, cap: 24,
-  init(scene) {
-    const g = new THREE.BufferGeometry(), n = this.cap; this.p = new Float32Array(n * 3); this.s = new Float32Array(n); this.a = new Float32Array(n); this.f = new Float32Array(n);
-    g.setAttribute('position', new THREE.BufferAttribute(this.p, 3)); g.setAttribute('aSize', new THREE.BufferAttribute(this.s, 1)); g.setAttribute('aA', new THREE.BufferAttribute(this.a, 1)); g.setAttribute('aF', new THREE.BufferAttribute(this.f, 1));
-    for (const k of ['position', 'aSize', 'aA', 'aF']) g.attributes[k].setUsage(THREE.DynamicDrawUsage);
-    const m = new THREE.ShaderMaterial({ uniforms: { uScale: { value: 800 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-      vertexShader: 'attribute float aSize; attribute float aA; attribute float aF; uniform float uScale; varying float vA; varying float vF; void main(){ vec4 mv = modelViewMatrix*vec4(position,1.0); float d = max(-mv.z, .01); vA = aA * smoothstep(.8, 4.0, d); vF = aF; gl_PointSize = clamp(aSize*uScale/d*(.55+.45*aF), 0.0, 360.0); gl_Position = projectionMatrix*mv; if (vA < .003) gl_Position = vec4(2.0, 2.0, 2.0, 1.0); }',
-      fragmentShader: 'varying float vA; varying float vF; void main(){ vec2 p = gl_PointCoord - .5; float r = length(p) * 2.0, an = atan(p.y, p.x);' +
-        ' float core = exp(-r*r*55.0) * 1.3 + exp(-r*r*7.0) * .32;' +
-        ' float rays = (pow(abs(cos(an * 3.0)), 70.0) * exp(-r * 3.2) * .7 + pow(abs(cos(an * 2.0 + .5)), 140.0) * exp(-r * 2.4) * .45) * vF;' +
-        ' float streak = exp(-abs(p.y) * 70.0) * exp(-abs(p.x) * 2.6) * .85 * vF;' +
-        ' float a = (core + rays + streak) * vA; if (a < .004) discard; gl_FragColor = vec4(.93, .96, 1.0, a); }' });
-    this.mesh = new THREE.Points(g, m); this.mesh.frustumCulled = false; this.mesh.renderOrder = 9; scene.add(this.mesh);
-  },
-  begin() { this.n = 0; },
-  add(v, size, facing, a) { if (this.n >= this.cap || a < .004) return; const i = this.n++; this.p[i * 3] = v.x; this.p[i * 3 + 1] = v.y; this.p[i * 3 + 2] = v.z; this.s[i] = size; this.a[i] = a; this.f[i] = facing; },
-  end(rend) { if (!this.mesh) return; const g = this.mesh.geometry; g.setDrawRange(0, this.n); for (const k of ['position', 'aSize', 'aA', 'aF']) g.attributes[k].needsUpdate = true; this.mesh.material.uniforms.uScale.value = rend.domElement.height / (2 * Math.tan(camera.fov * Math.PI / 360)) * .02; }
-};
 const GlowPts = {
   mat: null, dmat: null, dyn: null, n: 0, cap: 640,
   shader(k) {
@@ -3203,6 +3182,25 @@ function buildLoco(opt) {
   return { g, cv, tex, cv2, tex2, thrL, brkL, wipers, wiperLen: 1.12, wipeA: [-1.45, .15], glassSpec, spot, cabMesh, axles, heads: [[-1.0, 1.45, 10.1], [1.0, 1.45, 10.1], [0, 3.38, 10.1]], beams: [[-1.0, 1.45, 10.0], [1.0, 1.45, 10.0]] };
 }
 
+/* the enclosed passage between two cars, seen from inside: a rubber bellows (alternating folds on both sides and over the
+   roof) round the end-door opening and a metal bridge plate over the gap; each car carries the half on its side, from its
+   end wall at za to the middle of the gap at zb (the two halves meet there). (The passage used to be open: walking between
+   the cars showed the track below and the sky above.) */
+function gangwayTunnel(B, za, zb, hs) {
+  const W = .62, Y0 = .95, Y1 = 3.04, lo = Math.min(za, zb), hi = Math.max(za, zb), n = Math.max(6, Math.round((hi - lo) / .062)), C1 = hs ? [.15, .16, .18] : [.12, .12, .13], C2 = hs ? [.25, .26, .28] : [.21, .21, .22];
+  for (let i = 0; i < n; i++) { const z0 = lo + (hi - lo) * i / n, z1 = lo + (hi - lo) * (i + 1) / n, d = i % 2 ? .035 : 0, c = i % 2 ? C1 : C2;
+    B.aabb(-W - .045 - d, -W - d, Y0, Y1 + d, z0, z1, c); B.aabb(W + d, W + .045 + d, Y0, Y1 + d, z0, z1, c);                       /* side folds */
+    B.aabb(-W - d, W + d, Y1 + d, Y1 + .045 + d, z0, z1, c); }                                                                   /* roof folds */
+  B.aabb(-W, W, Y0 - .035, Y0 + .012, lo, hi, [.44, .45, .47]);                                                                  /* bridge plate */
+  for (let k = 1; k < 5; k++) { const z = lo + (hi - lo) * k / 5; B.aabb(-W + .04, W - .04, Y0 + .012, Y0 + .016, z - .012, z + .012, [.32, .33, .35]); }   /* tread ribs */
+}
+/* a closed end door in the end-wall opening (where no passage continues: towards the locomotive and at the tail) */
+function endDoor(B, z, sg) {
+  const t = .035, z0 = Math.min(z, z - sg * t), z1 = Math.max(z, z - sg * t), zf = sg > 0 ? z0 - .004 : z1 + .004;
+  B.aabb(-.6, .6, .95, 3.0, z0, z1, [.55, .57, .6]);
+  B.aabb(-.34, .34, 1.85, 2.72, Math.min(zf, zf - sg * .006), Math.max(zf, zf - sg * .006), [.12, .15, .2]);   /* window */
+  B.aabb(.36, .44, 1.55, 1.6, Math.min(zf, zf - sg * .04), Math.max(zf, zf - sg * .04), [.75, .76, .78]);      /* handle */
+}
 function buildCar(idx, rr, opt) {
   opt = opt || {}; const b = new Builder(), gl = new Builder(), lamp = new Builder(), sh = new Builder(), tl = new Builder(), led = new Builder(), pb = new Builder(), pl = new Builder(), g = new THREE.Group(), L = opt.liv || LIV, doors = [];
   const WH = opt.wh || .8, Y0 = opt.y0 || 1.7, Y1 = opt.y1 || 3.3, TOP = opt.top || 4.0, RY = opt.ry || .45, YS = TOP - RY, BOT = .8, DT = Math.min(Y1 + .05, YS - .1);
@@ -3235,6 +3233,9 @@ function buildCar(idx, rr, opt) {
     }
   }
   for (const z of [-11, 11]) { const zz = z > 0 ? [10.9, 11] : [-11, -10.9]; b.aabb(-1.42, -.6, .95, YS, zz[0], zz[1], L.inner); b.aabb(.6, 1.42, .95, YS, zz[0], zz[1], L.inner); b.aabb(-.6, .6, 3.0, YS, zz[0], zz[1], L.inner); }
+  /* towards the next car an enclosed passage, towards the locomotive and at the tail a closed end door */
+  if (idx === 0) endDoor(b, 10.95, 1); else gangwayTunnel(b, 11, 11.74, opt.hs);
+  if (last) endDoor(b, -10.95, -1); else gangwayTunnel(b, -11, -11.74, opt.hs);
   for (let z = -6.6; z < 6.4; z += 1.1) for (const sg of [-1, 1]) {
     const c = ((z * 3) | 0) % 2 ? L.seat1 : L.seat2, x0 = sg > 0 ? .4 : -1.3, x1 = sg > 0 ? 1.3 : -.4;
     b.aabb(x0, x1, .95, 1.4, z - .25, z + .25, c); b.aabb(x0, x1, 1.4, 2.15, z - .27, z - .17, c);
@@ -3370,11 +3371,7 @@ class Train {
     const v = this.v3, L = this.loco, k = on ? .35 + .9 * night : .08;
     /* the headlight glows are for outside views: from the cab (or inside the train) the 2.4 m glow sprites showed through
        the gap under the nose as a bright white bar where the light seemed to start */
-    if (!['cab', 'walk', 'pass'].includes(CamMgr.id)) {
-      const fw = this.fw || (this.fw = new THREE.Vector3()), to = this.to || (this.to = new THREE.Vector3()); fw.set(0, 0, 1).transformDirection(L.g.matrixWorld);
-      for (const h of L.heads || []) { v.set(h[0], h[1], h[2]); L.g.localToWorld(v); GlowPts.addV(v, h[1] > 2 ? 1.6 : 2.4, 1, .96, .86, k);
-        /* the glare of the lamp itself: lit only when the lights are on, strongest seen from straight ahead */
-        if (on) { const face = Math.max(0, fw.dot(to.copy(camera.position).sub(v).normalize())); LampFlare.add(v, h[1] > 2 ? 2.2 : 3.4, face * face, (.45 + .9 * night) * (.25 + .75 * face)); } } }
+    /* no glow sprites at the own headlights (the player asked for the beams only): the lit lamp lenses and the beams show the light */
     if (this.tailCar && this.tailCar.tails) for (const h of this.tailCar.tails) { v.set(h[0], h[1], h[2]); this.tailCar.g.localToWorld(v); GlowPts.addV(v, 1.3, 1, .12, .06, on ? .25 + .8 * night : .15); }
   }
   /* each light shaft turns about its beam axis to face the camera */
@@ -3642,6 +3639,7 @@ function buildHSLoco(opt) {
 /* rear driving car of the high-speed set: the same nose turned round, with passenger doors and red tail lamps */
 function buildHSTail(rr, opt) {
   const g = new THREE.Group(), E = buildHSLoco({ ext: true, tail: true, liv: opt && opt.liv, ai: opt && opt.ai }); E.g.rotation.y = Math.PI; g.add(E.g);
+  { const B = new Builder(), zf = E.len / 2; gangwayTunnel(B, zf - .02, zf + .7, true); endDoor(B, zf - .02, 1); const m = B.build(MAT.trainBody, true); if (m) g.add(m); }   /* the other half of the passage from the last car, ending at the cab car's closed door */
   const doors = [], DH = 2.95 - .95;
   for (const sg of [-1, 1]) for (const lf of [-1, 1]) {
     const z0 = 11.78 + lf * .33;
@@ -4282,6 +4280,9 @@ function personGeo(lo) {
   G.mouth = box(.044, .012, .01, 0, -.054, .0985);
   /* hair styles */
   G.hr = new THREE.SphereGeometry(.113, n(12), n(6), 0, TAU, 0, Math.PI * .56); G.hr.scale(1, 1.17, 1.08); G.hr.translate(0, .012, -.006);
+  /* hairline: at the front the hair stops above the brows, at the temples lower, at the back lowest (the cap used to reach
+     below eye level all round, so the hair lay across the eyes) */
+  { const p = G.hr.attributes.position; for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i), f = z / Math.max(1e-4, Math.hypot(x, z)), minY = -.03 + .095 * Math.min(1, Math.max(0, (f - .3) / .5)); if (p.getY(i) < minY) p.setY(i, minY); } G.hr.computeVertexNormals(); }
   G.hl = sph(.112, n(10), n(6), 0, -.1, -.055, 1, 1.75, .6);
   G.pony = mergeGeos([sph(.05, n(8), n(5), 0, .035, -.118), at(new THREE.CylinderGeometry(.034, .016, .22, n(6)).rotateX(.35), 0, -.07, -.15)]);
   G.bun = sph(.056, n(8), n(6), 0, .1, -.075);
@@ -4293,7 +4294,7 @@ function personGeo(lo) {
   /* accessories */
   G.glasses = mergeGeos([at(new THREE.TorusGeometry(.021, .0038, 4, 10), -.036, .018, .113), at(new THREE.TorusGeometry(.021, .0038, 4, 10), .036, .018, .113), box(.03, .005, .005, 0, .022, .114), box(.005, .005, .11, -.104, .022, .06), box(.005, .005, .11, .104, .022, .06)]);
   { const dome = new THREE.SphereGeometry(.119, n(12), n(5), 0, TAU, 0, Math.PI * .5); dome.scale(1, .95, 1.06); dome.translate(0, .035, -.004); G.cap = mergeGeos([dome, box(.17, .012, .11, 0, .04, .135, .12)]); }
-  { const dome = new THREE.SphereGeometry(.121, n(12), n(5), 0, TAU, 0, Math.PI * .56); dome.scale(1, 1.25, 1.08); dome.translate(0, .02, -.004); const band = new THREE.CylinderGeometry(.123, .124, .045, n(12), 1, true); band.scale(1, 1, 1.08); band.translate(0, .03, -.004); G.beanie = mergeGeos([dome, band]); }
+  { const dome = new THREE.SphereGeometry(.121, n(12), n(5), 0, TAU, 0, Math.PI * .5); dome.scale(1, 1.2, 1.08); dome.translate(0, .062, -.004); const band = new THREE.CylinderGeometry(.124, .125, .045, n(12), 1, true); band.scale(1, 1, 1.08); band.translate(0, .062, -.004); G.beanie = mergeGeos([dome, band]); }   /* sits above the brows */
   G.ear = mergeGeos([sph(.011, 4, 3, -.105, -.04, -.003), sph(.011, 4, 3, .105, -.04, -.003)]);
   { const band = new THREE.TorusGeometry(.122, .011, 4, n(12), Math.PI); band.translate(0, .02, -.01); const cup = s => { const c = new THREE.CylinderGeometry(.038, .038, .032, n(8)); c.rotateZ(Math.PI / 2); return at(c, s * .112, .005, -.01); }; G.phones = mergeGeos([band, cup(-1), cup(1)]); }
   G.scarf = (() => { const g = new THREE.TorusGeometry(.085, .034, n(5), n(10)); g.rotateX(Math.PI / 2); g.scale(1, 1, .8); return at(g, 0, .6, 0); })();
@@ -6829,8 +6830,11 @@ const CamMgr = {
       const mv = InputManager.keys, pm = InputManager.pad.move, wk = this.walk, wp = window.WalkPad || { f: 0, s: 0 };
       const f = (mv.KeyW ? 1 : 0) - (mv.KeyS ? 1 : 0) - pm[1] + wp.f, sd = (mv.KeyD ? 1 : 0) - (mv.KeyA ? 1 : 0) + pm[0] + wp.s;
       const fw = Math.cos(L.yaw) * f + Math.sin(L.yaw) * sd * 0, ss = -Math.sin(L.yaw) * f + Math.cos(L.yaw) * sd;
-      wk.w = clamp(wk.w - (Math.cos(L.yaw) * f + Math.sin(L.yaw) * sd) * 2.2 * dt, LOCO_LEN + GAP + 1.2, train.length - 1.2);
-      wk.x = clamp(wk.x + (Math.sin(L.yaw) * f - Math.cos(L.yaw) * sd) * 1.6 * dt, -1.05, 1.05);
+      const lastPax = train.items.filter(q => q.kind === 'car' && !(q.car && q.car.tail)).pop(), wMax = lastPax ? lastPax.off + lastPax.len - 1.2 : train.length - 1.2;   /* the HS tail car has no interior */
+      wk.w = clamp(wk.w - (Math.cos(L.yaw) * f + Math.sin(L.yaw) * sd) * 2.2 * dt, LOCO_LEN + GAP + 1.2, wMax);
+      /* near a car end and in the passage the camera stays inside the end-door opening (it used to slide through the end walls) */
+      let xMax = 1.05; { let it = null; for (const q of train.items) if (wk.w <= q.off + q.len + GAP * .5) { it = q; break; } if (it) { const zl = Math.abs(it.len / 2 - (wk.w - it.off)); xMax = 1.05 - .65 * Math.min(1, Math.max(0, (zl - 9.9) / .7)); } }
+      wk.x = clamp(wk.x + (Math.sin(L.yaw) * f - Math.cos(L.yaw) * sd) * 1.6 * dt, -xMax, xMax);
       const it = train.pointAt(wk.w, wk.x, 2.62, p); const sh = shake(.6); p.y += sh[1]; this.nearWindow = Math.abs(wk.x) > .8;
       e.set(L.pitch, L.yaw + Math.PI, 0); q.setFromEuler(e); q.premultiply(it.g.getWorldQuaternion(new THREE.Quaternion()));
       cam.position.copy(p); cam.quaternion.copy(q);
@@ -7558,7 +7562,7 @@ function initEngine() {
   cabLight = new THREE.PointLight(0xffe2b0, 0, 9, 1.5); camera.add(cabLight);
   initMaterials(); sky = new Sky(scene, camera); precip = new Precip(scene, 4000); FarLand.init(scene, sky);
   G.train = new Train(scene, SettingsManager.v.train, SettingsManager.v.tc[SettingsManager.v.train].nc); CabGlass.attach(G.train.loco); G.phys = new TrainPhysics(G.train.def); G.phys.setDef(G.train.def, G.train.nc); Sound.setProfile(G.train.def.snd); Limits.init(scene); Junctions.init(scene); Traffic.init(scene); Events.init(scene); Aviation.init(scene); Volcano.init(scene); BiomeFX.init(scene); Spaceport.init(scene); G.lim = { cur: 120, allowed: 40, next: null, atp: 'ok', mode: 'warn' }; G.atpBrake = 0; G.atpCut = false;
-  Dev.init(scene); StopMark.init(scene); WorldGen.init(scene); Passengers.init(scene); StationLife.init(); Wildlife.init(scene); Birds.init(scene); StationCat.init(scene); RailTraffic.init(scene); GlowPts.init(scene); LampFlare.init(scene);
+  Dev.init(scene); StopMark.init(scene); WorldGen.init(scene); Passengers.init(scene); StationLife.init(); Wildlife.init(scene); Birds.init(scene); StationCat.init(scene); RailTraffic.init(scene); GlowPts.init(scene);
   CamMgr.init(camera); InputManager.init($('gl')); UI.init(G);
   InputManager.onKey = onKey; window.addEventListener('resize', resize); window.addEventListener('orientationchange', () => setTimeout(resize, 200));
   document.addEventListener('visibilitychange', () => { if (document.hidden) G.save(); else { try { if (navigator.wakeLock && G.running && !G.wl) navigator.wakeLock.request('screen').then(l => { G.wl = l; }).catch(() => { }); } catch (e) { } } });
@@ -7661,7 +7665,7 @@ function frame(now) {
   if (G.inMenu && (G.menuF = (G.menuF || 0) + 1) % 3) { G.last = now; return; }
   /* paused (camera can still move): half rate is enough and halves the GPU work while nothing else changes */
   if (G.paused && !G.inMenu && (G.pauseF = (G.pauseF || 0) + 1) % 2) { G.last = now; return; }
-  GlowPts.begin(); LampFlare.begin();
+  GlowPts.begin();
   const raw = Math.min(.25, (now - G.last) / 1000); G.last = now; const dt = Math.min(.05, raw); G.dtLast = dt; if (!G.inMenu) Quality.sample(raw);
   const sim = G.paused ? 0 : dt; G.t += sim; const p = G.phys, tr = G.train, kb = InputManager.keys, id = CamMgr.id, walking = id === 'walk' || id === 'photo';
   /* controls */
@@ -7730,7 +7734,7 @@ function frame(now) {
   const zs = Rail.zoneAt(p.s), pts = (zs.kind === 'station' && Math.abs(Math.abs(p.s - zs.c) - (Rail.stl(zs).P + 150)) < 140) || (zs.kind === 'junction' && Math.abs(p.s - zs.sj) < 70);
   Sound.hold(!!G.paused); Sound.update(dt, { axles: tr.axleW, lw, extK, jointed: vn1(p.s / 9000, Rail.seed + 41) <= .38 || bio.stf > .2, points: pts, comp: p.p < 4.9 && p.brake < .08 && !p.emerg, airPos: Aviation.loudPos, speed: p.v, thr: p.throttle, brakeF: (5 - p.p) / 5, inside: id === 'cab' ? 1 : id === 'roof' ? .3 : (id === 'walk' || id === 'pass') ? .7 : 0, cam: id === 'cab' ? 'cab' : (id === 'walk' || id === 'pass') ? 'pass' : 'ext', rain: Env.rain, wind: Env.wind, tunnel: Env.tunnel, bridge: bio.deck ? 1 : 0, near: clamp(1 - dist / 160, 0, 1) * (Passengers.list.length > 0 ? 1 : 0) * (.6 + Math.min(.8, Passengers.list.length / 70)), oth: RailTraffic.loud(camera.position), urban: bio.urban, road: Traffic.near, air: Math.max(Aviation.loud, Spaceport.launch ? .0 : 0), forest: bio.forest, day: Env.day, dp: G.dp || 0 });
   Music.update(dt, SettingsManager.v.musicOn);
-  GlowPts.end(camera, renderer); LampFlare.end(renderer);
+  GlowPts.end(camera, renderer);
   /* height fog: the haze layer sits on the valley floor of the line near the train and is thicker in mist, rain and snow */
   FOGHB.x = Rail.ty(p.s) - 2; FOGHB.y = 190 + 450 * Env.fogK + 260 * Env.rain + 200 * Env.snow + (Env.mapMode ? 2000 : 0);
   FarLand.update(camera, p.s, sky, QL.detail > 1 ? 2.5 : 1.5);

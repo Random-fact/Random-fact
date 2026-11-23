@@ -914,3 +914,19 @@ bitmap textures except the existing window textures), same mechanics, cameras, t
 * Checks: front, side and cab views at night in clear weather and fog for both trains next to the player's picture; a
   line-up of 24 platform people facing the camera (wide and close); seated passengers in both trains; boot without errors;
   short soak on ultra (27 game days, classic, 12 cars, all events, 7 station stops, 3 reloads): 0 errors, heap steady.
+
+## Update 23 Nov 2026 (24): no glow balls on the nose, hair off the eyes, enclosed passages between cars
+* Headlights: the round glow sprites and the glare at the own headlights are gone (the player wanted the beams only);
+  the lit lamp lenses and the beams (cones and light shafts) remain. Other trains keep their lamp glows.
+* Hair: the short-hair cap reached below eye level all the way round, so hair lay across the eyes; it now has a hairline
+  above the brows at the front, lower at the temples and lowest at the back (the bob, which includes it, too). The beanie
+  now sits above the brows as well.
+* Between the cars: the passage was open (the track below and the sky above). Each car now carries half of an enclosed
+  passage on its side: a rubber bellows with alternating folds on both sides and over the roof around the end-door
+  opening, and a ribbed metal bridge plate over the gap; the halves of neighbouring cars meet in the middle. Towards the
+  locomotive and at the tail the end-door opening is closed by an end door with a window; the HS cab car at the tail has
+  its half of the passage and a closed door. The walk camera stays inside the end-door opening near the car ends (it
+  used to slide through the end walls) and no longer goes into the HS tail car (it has no interior).
+* Checks: the passage from inside in both trains (forward, back, up, down), the end doors, the line-up of platform
+  people (wide and close), the HS nose at night; boot without errors; short soak (50 game days, HS, 10 cars, the walk
+  camera in rotation, 14 station stops, 6 reloads): 0 errors.
