@@ -894,3 +894,23 @@ bitmap textures except the existing window textures), same mechanics, cameras, t
 * Checks: HS nose from the front, both front quarters and the side, by day (lights on/off), at dusk and at night; the
   player's reference beside the new nose; car interiors (walk camera) and windows from outside, classic and HS, before /
   after; boot without errors; short soak (36 game days, HS, 12 cars, all events, 10 station stops, 4 reloads): 0 errors.
+
+## Update 23 Nov 2026 (23): headlight light like a car's at night; people with faces, joints, hair styles, accessories
+* Headlights (both trains, after the player's picture of a car at night): each lamp now has a glare (a hot core, a star
+  of rays and a horizontal streak, strongest seen from straight ahead; not drawn from the cab), and the light leaves each
+  lamp as a beam that is narrow at the lamp (12 cm), 7.5 m across 70 m ahead, tilted down and slightly outwards so it
+  falls on the track. Besides the cone (seen from the side), each beam has a light shaft that turns about the beam axis
+  to face the camera, so the beams also show from in front and from behind (the cone alone vanished seen end-on). Clear
+  nights brighter than before; fog, rain and snow brighter still.
+* People: the seated passengers sat inside the backrest (torso and head); they now sit 5 cm further forward, clear of it.
+  The limbs are joined to the body: shoulders on the arms, a pelvis, knees (seated), hands and shoes. Every person has a
+  face: eyes (whites and pupils, several eye colours), brows (thinner for women), nose, mouth (lipstick for some women),
+  ears. Half are women, half men (measured 49.8 % women over 2,000 people). Hair styles: short, side-swept with a fringe,
+  curly, bald, long, ponytail, bun, bob; grey hair for some older people, dyed hair for a few women; beards (with a
+  moustache) or a moustache for some men. Clothes: open jackets over a shirt, dresses, skirts with tights or bare legs,
+  several shoe colours, backpacks, suitcases. Accessories: glasses, caps, beanies, earrings, headphones, scarves. The
+  same shapes and dressing rules for the platform people (instanced: 33 parts) and the seated passengers (merged into
+  the car; full detail within 30 m of the camera, a simple version beyond, none beyond 220 m).
+* Checks: front, side and cab views at night in clear weather and fog for both trains next to the player's picture; a
+  line-up of 24 platform people facing the camera (wide and close); seated passengers in both trains; boot without errors;
+  short soak on ultra (27 game days, classic, 12 cars, all events, 7 station stops, 3 reloads): 0 errors, heap steady.

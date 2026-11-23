@@ -1522,6 +1522,27 @@ function initMaterials() {
 }
 /* ===== Glow points: additive light halos. Static ones are baked per chunk (street, platform, tunnel lamps: one draw call per chunk,
    brightness follows the night), dynamic ones (train lamps, signals, crossings, vehicles, aircraft) are rewritten every frame ===== */
+/* the glare of a headlight seen from in front: a hot core, a star of rays and a horizontal streak, stronger the more
+   directly the lamp points at the camera (like a car's headlights at night) */
+const LampFlare = {
+  n: 0, cap: 24,
+  init(scene) {
+    const g = new THREE.BufferGeometry(), n = this.cap; this.p = new Float32Array(n * 3); this.s = new Float32Array(n); this.a = new Float32Array(n); this.f = new Float32Array(n);
+    g.setAttribute('position', new THREE.BufferAttribute(this.p, 3)); g.setAttribute('aSize', new THREE.BufferAttribute(this.s, 1)); g.setAttribute('aA', new THREE.BufferAttribute(this.a, 1)); g.setAttribute('aF', new THREE.BufferAttribute(this.f, 1));
+    for (const k of ['position', 'aSize', 'aA', 'aF']) g.attributes[k].setUsage(THREE.DynamicDrawUsage);
+    const m = new THREE.ShaderMaterial({ uniforms: { uScale: { value: 800 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      vertexShader: 'attribute float aSize; attribute float aA; attribute float aF; uniform float uScale; varying float vA; varying float vF; void main(){ vec4 mv = modelViewMatrix*vec4(position,1.0); float d = max(-mv.z, .01); vA = aA * smoothstep(.8, 4.0, d); vF = aF; gl_PointSize = clamp(aSize*uScale/d*(.55+.45*aF), 0.0, 360.0); gl_Position = projectionMatrix*mv; if (vA < .003) gl_Position = vec4(2.0, 2.0, 2.0, 1.0); }',
+      fragmentShader: 'varying float vA; varying float vF; void main(){ vec2 p = gl_PointCoord - .5; float r = length(p) * 2.0, an = atan(p.y, p.x);' +
+        ' float core = exp(-r*r*55.0) * 1.3 + exp(-r*r*7.0) * .32;' +
+        ' float rays = (pow(abs(cos(an * 3.0)), 70.0) * exp(-r * 3.2) * .7 + pow(abs(cos(an * 2.0 + .5)), 140.0) * exp(-r * 2.4) * .45) * vF;' +
+        ' float streak = exp(-abs(p.y) * 70.0) * exp(-abs(p.x) * 2.6) * .85 * vF;' +
+        ' float a = (core + rays + streak) * vA; if (a < .004) discard; gl_FragColor = vec4(.93, .96, 1.0, a); }' });
+    this.mesh = new THREE.Points(g, m); this.mesh.frustumCulled = false; this.mesh.renderOrder = 9; scene.add(this.mesh);
+  },
+  begin() { this.n = 0; },
+  add(v, size, facing, a) { if (this.n >= this.cap || a < .004) return; const i = this.n++; this.p[i * 3] = v.x; this.p[i * 3 + 1] = v.y; this.p[i * 3 + 2] = v.z; this.s[i] = size; this.a[i] = a; this.f[i] = facing; },
+  end(rend) { if (!this.mesh) return; const g = this.mesh.geometry; g.setDrawRange(0, this.n); for (const k of ['position', 'aSize', 'aA', 'aF']) g.attributes[k].needsUpdate = true; this.mesh.material.uniforms.uScale.value = rend.domElement.height / (2 * Math.tan(camera.fov * Math.PI / 360)) * .02; }
+};
 const GlowPts = {
   mat: null, dmat: null, dyn: null, n: 0, cap: 640,
   shader(k) {
@@ -3183,7 +3204,7 @@ function buildLoco(opt) {
 }
 
 function buildCar(idx, rr, opt) {
-  opt = opt || {}; const b = new Builder(), gl = new Builder(), lamp = new Builder(), sh = new Builder(), tl = new Builder(), led = new Builder(), g = new THREE.Group(), L = opt.liv || LIV, doors = [];
+  opt = opt || {}; const b = new Builder(), gl = new Builder(), lamp = new Builder(), sh = new Builder(), tl = new Builder(), led = new Builder(), pb = new Builder(), pl = new Builder(), g = new THREE.Group(), L = opt.liv || LIV, doors = [];
   const WH = opt.wh || .8, Y0 = opt.y0 || 1.7, Y1 = opt.y1 || 3.3, TOP = opt.top || 4.0, RY = opt.ry || .45, YS = TOP - RY, BOT = .8, DT = Math.min(Y1 + .05, YS - .1);
   const wc = opt.wc || [-5.5, -3.3, -1.1, 1.1, 3.3, 5.5], bands = typeof opt.bands === 'function' ? opt.bands(L) : opt.bands || [[0, Y0, L.teal]];
   const last = idx === NCARS - 1, axles = [];
@@ -3217,7 +3238,7 @@ function buildCar(idx, rr, opt) {
   for (let z = -6.6; z < 6.4; z += 1.1) for (const sg of [-1, 1]) {
     const c = ((z * 3) | 0) % 2 ? L.seat1 : L.seat2, x0 = sg > 0 ? .4 : -1.3, x1 = sg > 0 ? 1.3 : -.4;
     b.aabb(x0, x1, .95, 1.4, z - .25, z + .25, c); b.aabb(x0, x1, 1.4, 2.15, z - .27, z - .17, c);
-    for (let k = 0; k < 2; k++) if (rr() < .38 * Math.min(1, QL.pax || 1)) { const sx = x0 + (k + .5) * .45;   /* fewer seated passengers on low graphics */ if (Math.abs(z + 1.1) < .3) continue; /* the row of the 'carriage window' camera stays free (it can turn all the way round now, a face right beside it filled the view) */ seatedPerson(b, sx, 1.4, z, .95, rr); }
+    for (let k = 0; k < 2; k++) if (rr() < .38 * Math.min(1, QL.pax || 1)) { const sx = x0 + (k + .5) * .45;   /* fewer seated passengers on low graphics */ if (Math.abs(z + 1.1) < .3) continue; /* the row of the 'carriage window' camera stays free (it can turn all the way round now, a face right beside it filled the view) */ seatedPerson(pb, sx, 1.4, z, .95, rr, pl); }
   }
   for (const z of [-7, -2.3, 2.3, 7]) lamp.aabb(-.4, .4, YS - .05, YS, z - .5, z + .5, [1, 1, 1]);
   /* smooth outer shell: rounded roof, window and door openings cut out, glass behind */
@@ -3251,6 +3272,8 @@ function buildCar(idx, rr, opt) {
   Geo.hull(sh, { zs: [11, 11.37, 11.74], sec: bsec, col: bcol });
   if (!last) Geo.hull(sh, { zs: [-11.74, -11.37, -11], sec: bsec, col: bcol }); else for (const x of [-1, 1]) Geo.cylZ(tl, x, 1.4, -11.08, -10.95, .13, [1, 1, 1], 8);
   for (const k of ['p', 'n', 'c', 'u']) b[k].append(sh[k]);
+  /* seated passengers: full detail near the camera, a simple version further away, none beyond 220 m */
+  { const hi = pb.build(MAT.trainBody, true), lo = pl.build(MAT.trainBody, true); if (hi) { const lod = new THREE.LOD(); lod.addLevel(hi, 0); if (lo) lod.addLevel(lo, 30); lod.addLevel(new THREE.Object3D(), 220); g.add(lod); } }
   g.add(b.build(MAT.trainBody, true)); const glm = gl.build(MAT.trainGlass); if (glm) { glm.renderOrder = 3; g.add(glm); } g.add(lamp.build(MH.cabin)); const lm = led.build(MAT.emis); if (lm) g.add(lm);
   const tm = tl.build(opt.ai ? MH.aiTail : MH.tail); if (tm) g.add(tm);
   return { g, doors, axles, tails: last ? [[-1, 1.4, -11.1], [1, 1.4, -11.1]] : null };
@@ -3273,7 +3296,7 @@ function disposeTree(root) {
 }
 function markShared() { for (const o of [MAT, MH || {}]) for (const k in o) if (o[k] && o[k].isMaterial) o[k].userData.shared = true; }
 let BeamG = null;
-function BeamGeo() { if (!BeamG) { BeamG = new THREE.CylinderGeometry(10, .35, 85, 18, 1, true); BeamG.rotateX(Math.PI / 2); BeamG.translate(0, 0, 42.5); BeamG.shared = true; } return BeamG; }
+function BeamGeo() { if (!BeamG) { BeamG = new THREE.CylinderGeometry(7.5, .12, 70, 22, 1, true); BeamG.rotateX(Math.PI / 2); BeamG.translate(0, 0, 35); BeamG.shared = true; } return BeamG; }   /* a headlight cone: 12 cm at the lamp, 7.5 m across 70 m ahead */
 /* a windscreen wiper: a hub on the frame below the glass, a tapered arm standing a little off the glass and a blade
    (carrier + rubber) lying on it. Local +y runs along the arm, local +z points away from the glass; the group's
    rotation.z sweeps it. (The old wipers were bare sticks with no hub, so they seemed to hang in the air.) */
@@ -3295,9 +3318,23 @@ const Beam = {
     if (this.m) return this.m;
     this.m = new THREE.ShaderMaterial({ uniforms: { k: { value: 0 }, col: { value: new THREE.Color(1, .95, .85) } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
       vertexShader: 'varying float vV; varying float vF; void main(){ vV = uv.y; vec4 mv = modelViewMatrix*vec4(position,1.0); vec3 n = normalize(normalMatrix*normal); vF = abs(dot(n, normalize(-mv.xyz))); gl_Position = projectionMatrix*mv; }',
-      fragmentShader: 'uniform float k; uniform vec3 col; varying float vV; varying float vF; void main(){ float a = k * pow(1.0 - vV, 1.8) * pow(vF, 1.3) * 0.2 * smoothstep(0.0, 0.012, vV); if (a < 0.002) discard; gl_FragColor = vec4(col, a); }' });   /* fades in over the first metre: the light leaves the lamp without a hard-edged start */
+      fragmentShader: 'uniform float k; uniform vec3 col; varying float vV; varying float vF; void main(){ float a = k * pow(1.0 - vV, 2.0) * pow(vF, 1.15) * 0.34 * smoothstep(0.0, 0.008, vV); if (a < 0.002) discard; gl_FragColor = vec4(col, a); }' });   /* brightest at the lamp, fading with distance and towards the edges of the cone */
     this.m.userData.shared = true; return this.m;
   }
+};
+/* a light shaft: a flat wedge along the beam that turns about the beam axis to face the camera, bright at the lamp,
+   widening and fading ahead, soft at the edges; it shows the beams seen from in front or from behind, where the cone
+   alone (lit by how squarely its surface faces the viewer) disappears */
+const Shaft = {
+  m: null, g: null,
+  geo() { if (this.g) return this.g; const L = 58, r0 = .09, r1 = 5, NZ = 12, P = [], U = [], I = [];
+    for (let i = 0; i <= NZ; i++) { const t = i / NZ, z = L * t, r = r0 + (r1 - r0) * t; P.push(-r, 0, z, r, 0, z); U.push(0, t, 1, t); if (i) { const a = (i - 1) * 2; I.push(a, a + 1, a + 3, a, a + 3, a + 2); } }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2)); g.setIndex(I); g.shared = true; return this.g = g; },
+  mat() { if (this.m) return this.m;
+    this.m = new THREE.ShaderMaterial({ uniforms: { k: { value: 0 }, col: { value: new THREE.Color(.95, .96, 1) } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      vertexShader: 'varying vec2 vU; varying float vS; void main(){ vU = uv; vec4 mv = modelViewMatrix*vec4(position,1.0); vec3 ax = normalize((modelViewMatrix*vec4(0.0,0.0,1.0,0.0)).xyz); vS = length(cross(ax, normalize(mv.xyz))); gl_Position = projectionMatrix*mv; }',
+      fragmentShader: 'uniform float k; uniform vec3 col; varying vec2 vU; varying float vS; void main(){ float x = abs(vU.x*2.0-1.0); float a = k * pow(1.0 - vU.y, 1.7) * pow(1.0 - x, 1.8) * smoothstep(0.0, 0.01, vU.y) * smoothstep(0.012, 0.16, vS) * 0.55; if (a < 0.002) discard; gl_FragColor = vec4(col, a); }' });
+    this.m.userData.shared = true; return this.m; }
 };
 class Train {
   constructor(scene, type, nc) {
@@ -3317,7 +3354,9 @@ class Train {
     this.wheels = new WheelRig(scene, wl); this.axleW.sort((a, b) => a - b);
     /* headlight beams: soft additive cones that show up in fog, rain and at night, one starting at each headlight (the two
        overlap a few metres ahead, so each is a little narrower and the pair is about as bright as the single cone was) */
-    this.beams = (this.loco.beams || [this.loco.beam || [0, 1.45, 10]]).map(bp => { const m = new THREE.Mesh(BeamGeo(), Beam.mat()); m.position.set(bp[0], bp[1], bp[2]); m.scale.set(.78, .78, 1); m.frustumCulled = false; m.renderOrder = 8; this.loco.g.add(m); return m; });
+    this.shafts = [];
+    this.beams = (this.loco.beams || [this.loco.beam || [0, 1.45, 10]]).map(bp => { const m = new THREE.Mesh(BeamGeo(), Beam.mat()); m.position.set(bp[0], bp[1], bp[2]); m.rotation.set(.06, Math.sign(bp[0]) * .05, 0); m.frustumCulled = false;   /* tilted down and a little outwards, like a car's headlights: the light falls on the track ahead */
+      const sh = new THREE.Mesh(Shaft.geo(), Shaft.mat()); sh.frustumCulled = false; sh.renderOrder = 8; m.add(sh); this.shafts.push(sh); m.renderOrder = 8; this.loco.g.add(m); return m; });
     this.beam = this.beams[0];
     this.tailCar = this.cars.length ? this.cars[this.cars.length - 1] : null;
     this.dir = 1; this.sway = 0; this.v3 = new THREE.Vector3();
@@ -3331,9 +3370,15 @@ class Train {
     const v = this.v3, L = this.loco, k = on ? .35 + .9 * night : .08;
     /* the headlight glows are for outside views: from the cab (or inside the train) the 2.4 m glow sprites showed through
        the gap under the nose as a bright white bar where the light seemed to start */
-    if (!['cab', 'walk', 'pass'].includes(CamMgr.id)) for (const h of L.heads || []) { v.set(h[0], h[1], h[2]); L.g.localToWorld(v); GlowPts.addV(v, h[1] > 2 ? 1.6 : 2.4, 1, .96, .86, k); }
+    if (!['cab', 'walk', 'pass'].includes(CamMgr.id)) {
+      const fw = this.fw || (this.fw = new THREE.Vector3()), to = this.to || (this.to = new THREE.Vector3()); fw.set(0, 0, 1).transformDirection(L.g.matrixWorld);
+      for (const h of L.heads || []) { v.set(h[0], h[1], h[2]); L.g.localToWorld(v); GlowPts.addV(v, h[1] > 2 ? 1.6 : 2.4, 1, .96, .86, k);
+        /* the glare of the lamp itself: lit only when the lights are on, strongest seen from straight ahead */
+        if (on) { const face = Math.max(0, fw.dot(to.copy(camera.position).sub(v).normalize())); LampFlare.add(v, h[1] > 2 ? 2.2 : 3.4, face * face, (.45 + .9 * night) * (.25 + .75 * face)); } } }
     if (this.tailCar && this.tailCar.tails) for (const h of this.tailCar.tails) { v.set(h[0], h[1], h[2]); this.tailCar.g.localToWorld(v); GlowPts.addV(v, 1.3, 1, .12, .06, on ? .25 + .8 * night : .15); }
   }
+  /* each light shaft turns about its beam axis to face the camera */
+  shaftsFace(cam) { const c = this.cv3 || (this.cv3 = new THREE.Vector3()); for (const sh of this.shafts || []) { sh.parent.updateMatrixWorld(); c.copy(cam.position); sh.parent.worldToLocal(c); sh.rotation.z = Math.atan2(-c.x, c.y); } }
   /* place all vehicles: front of train at track position s, travelling along dir */
   place(s, dir, t, speed, dist) {
     this.dir = dir; const a = {}, b = {};
@@ -4211,55 +4256,104 @@ const WorldGen = {
 /* ===== Passengers (instanced figures on platforms, boarding / alighting) ===== */
 const MAXP = 220;
 /* the shapes of a person, shared by the people on the platforms (instanced, full detail) and the seated passengers inside
-   the cars (merged into the car mesh, a little coarser): torso, neck, head, hair, arm, leg, long hair, skirt */
+   the cars (merged into the car mesh, coarser). Head-related parts are relative to the head centre, body parts to the
+   torso base. Joints (shoulders on the arms, the pelvis, knees), hands and shoes make the limbs part of the body; the face
+   has eyes, brows, nose, mouth and ears. */
+function mergeGeos(list) {
+  const gs = list.map(g => g.index ? g.toNonIndexed() : g); let n = 0; for (const g of gs) n += g.attributes.position.count;
+  const P = new Float32Array(n * 3), N = new Float32Array(n * 3), U = new Float32Array(n * 2); let o = 0;
+  for (const g of gs) { P.set(g.attributes.position.array, o * 3); N.set(g.attributes.normal.array, o * 3); if (g.attributes.uv) U.set(g.attributes.uv.array, o * 2); o += g.attributes.position.count; }
+  const r = new THREE.BufferGeometry(); r.setAttribute('position', new THREE.BufferAttribute(P, 3)); r.setAttribute('normal', new THREE.BufferAttribute(N, 3)); r.setAttribute('uv', new THREE.BufferAttribute(U, 2)); return r;
+}
 function personGeo(lo) {
-  const n = a => Math.max(4, Math.round(a * (lo ? .6 : 1)));
-  const tg = new THREE.CylinderGeometry(.2, .15, .6, n(10)); tg.scale(1, 1, .62); tg.translate(0, .3, 0);
-  const ng = new THREE.CylinderGeometry(.045, .05, .1, n(6)); ng.translate(0, .64, 0);
-  const hd = new THREE.SphereGeometry(.105, n(12), n(8)); hd.scale(1, 1.17, 1.06);
-  const hr = new THREE.SphereGeometry(.113, n(12), n(6), 0, TAU, 0, Math.PI * .56); hr.scale(1, 1.17, 1.08); hr.translate(0, .012, -.006);
-  const ag = new THREE.CylinderGeometry(.05, .042, .58, n(6)); ag.translate(0, -.29, 0);
-  const lg = new THREE.CylinderGeometry(.08, .062, .84, n(7)); lg.translate(0, -.42, 0);
-  const hl = new THREE.SphereGeometry(.112, n(10), n(6)); hl.scale(1, 1.75, .6); hl.translate(0, -.1, -.055);
-  const sk = new THREE.CylinderGeometry(.17, .27, .46, n(10)); sk.scale(1, 1, .75); sk.translate(0, -.23, 0);
-  return { tg, ng, hd, hr, ag, lg, hl, sk };
+  const n = a => Math.max(3, Math.round(a * (lo ? .6 : 1))), at = (g, x, y, z) => { g.translate(x, y, z); return g; };
+  const box = (w, h, d, x, y, z, rx) => { const g = new THREE.BoxGeometry(w, h, d); if (rx) g.rotateX(rx); return at(g, x, y, z); };
+  const sph = (r, ws, hs, x, y, z, sx, sy, sz) => { const g = new THREE.SphereGeometry(r, ws, hs); g.scale(sx || 1, sy || 1, sz || 1); return at(g, x, y, z); };
+  const G = {};
+  G.tg = new THREE.CylinderGeometry(.2, .15, .6, n(10)); G.tg.scale(1, 1, .62); G.tg.translate(0, .3, 0);
+  G.ng = new THREE.CylinderGeometry(.045, .05, .1, n(6)); G.ng.translate(0, .64, 0);
+  /* head with nose and ears */
+  G.hd = mergeGeos([sph(.105, n(12), n(8), 0, 0, 0, 1, 1.17, 1.06), box(.024, .042, .03, 0, -.014, .11, -.3), sph(.027, 4, 3, -.104, -.004, -.004, .42, 1, .75), sph(.027, 4, 3, .104, -.004, -.004, .42, 1, .75)]);
+  /* face: eyes (dark), brows (hair colour), mouth (lip colour) */
+  G.eyes = mergeGeos([box(.03, .019, .006, -.036, .018, .1035), box(.03, .019, .006, .036, .018, .1035)]);              /* whites */
+  G.pupils = mergeGeos([box(.014, .016, .006, -.035, .017, .1065), box(.014, .016, .006, .035, .017, .1065)]);
+  G.browM = mergeGeos([box(.046, .011, .01, -.037, .048, .1, 0), box(.046, .011, .01, .037, .048, .1, 0)]);
+  G.browF = mergeGeos([box(.042, .007, .009, -.037, .051, .0995, 0), box(.042, .007, .009, .037, .051, .0995, 0)]);
+  G.mouth = box(.044, .012, .01, 0, -.054, .0985);
+  /* hair styles */
+  G.hr = new THREE.SphereGeometry(.113, n(12), n(6), 0, TAU, 0, Math.PI * .56); G.hr.scale(1, 1.17, 1.08); G.hr.translate(0, .012, -.006);
+  G.hl = sph(.112, n(10), n(6), 0, -.1, -.055, 1, 1.75, .6);
+  G.pony = mergeGeos([sph(.05, n(8), n(5), 0, .035, -.118), at(new THREE.CylinderGeometry(.034, .016, .22, n(6)).rotateX(.35), 0, -.07, -.15)]);
+  G.bun = sph(.056, n(8), n(6), 0, .1, -.075);
+  { const g = new THREE.SphereGeometry(.118, n(14), n(7), Math.PI * .72, Math.PI * 1.56, 0, Math.PI * .74); g.scale(1, 1.15, 1.07); g.translate(0, .006, -.004); G.bob = mergeGeos([g, G.hr.clone()]); }
+  G.curly = (() => { const g = new THREE.IcosahedronGeometry(.128, 1); const p = g.attributes.position; for (let i = 0; i < p.count; i++) { if (p.getY(i) < -.02) p.setY(i, -.02 + (p.getY(i) + .02) * .25); if (p.getZ(i) > .07 && p.getY(i) < .06) p.setZ(i, .07); } g.computeVertexNormals(); g.scale(1, 1.08, 1.05); g.translate(0, .03, -.01); return g; })();
+  G.fringe = box(.15, .028, .045, .02, .078, .098, -.5);
+  G.beard = mergeGeos([(() => { const g = new THREE.SphereGeometry(.111, n(12), n(5), Math.PI * .1, Math.PI * .8, Math.PI * .67, Math.PI * .31); g.scale(1, 1.17, 1.07); return g; })(), box(.062, .013, .014, 0, -.034, .107)]);   /* chin and jaw below the mouth, with a moustache */
+  G.must = box(.062, .013, .014, 0, -.034, .107);
+  /* accessories */
+  G.glasses = mergeGeos([at(new THREE.TorusGeometry(.021, .0038, 4, 10), -.036, .018, .113), at(new THREE.TorusGeometry(.021, .0038, 4, 10), .036, .018, .113), box(.03, .005, .005, 0, .022, .114), box(.005, .005, .11, -.104, .022, .06), box(.005, .005, .11, .104, .022, .06)]);
+  { const dome = new THREE.SphereGeometry(.119, n(12), n(5), 0, TAU, 0, Math.PI * .5); dome.scale(1, .95, 1.06); dome.translate(0, .035, -.004); G.cap = mergeGeos([dome, box(.17, .012, .11, 0, .04, .135, .12)]); }
+  { const dome = new THREE.SphereGeometry(.121, n(12), n(5), 0, TAU, 0, Math.PI * .56); dome.scale(1, 1.25, 1.08); dome.translate(0, .02, -.004); const band = new THREE.CylinderGeometry(.123, .124, .045, n(12), 1, true); band.scale(1, 1, 1.08); band.translate(0, .03, -.004); G.beanie = mergeGeos([dome, band]); }
+  G.ear = mergeGeos([sph(.011, 4, 3, -.105, -.04, -.003), sph(.011, 4, 3, .105, -.04, -.003)]);
+  { const band = new THREE.TorusGeometry(.122, .011, 4, n(12), Math.PI); band.translate(0, .02, -.01); const cup = s => { const c = new THREE.CylinderGeometry(.038, .038, .032, n(8)); c.rotateZ(Math.PI / 2); return at(c, s * .112, .005, -.01); }; G.phones = mergeGeos([band, cup(-1), cup(1)]); }
+  G.scarf = (() => { const g = new THREE.TorusGeometry(.085, .034, n(5), n(10)); g.rotateX(Math.PI / 2); g.scale(1, 1, .8); return at(g, 0, .6, 0); })();
+  /* limbs: arm with its shoulder, hand at its end, leg, shoe, knee, pelvis */
+  G.ag = mergeGeos([at(new THREE.CylinderGeometry(.05, .042, .58, n(6)), 0, -.29, 0), sph(.057, n(8), n(6), -.01, -.02, 0)]);
+  G.hand = sph(.046, n(7), n(5), 0, -.615, .005, .85, 1.15, .75);
+  G.lg = at(new THREE.CylinderGeometry(.08, .062, .84, n(7)), 0, -.42, 0);
+  G.shoe = mergeGeos([box(.105, .07, .23, 0, -.865, .04), sph(.053, n(6), 3, 0, -.865, .15, 1, .65, .7)]);
+  G.knee = sph(.08, n(7), n(5), 0, 0, 0);
+  G.hip = (() => { const g = new THREE.CylinderGeometry(.175, .165, .17, n(10)); g.scale(1, 1, .7); return g; })();
+  /* clothes: skirt, dress, the shirt under an open jacket */
+  G.sk = at(new THREE.CylinderGeometry(.17, .27, .46, n(10)), 0, -.23, 0); G.sk.scale(1, 1, .75);
+  G.dress = at(new THREE.CylinderGeometry(.18, .31, .66, n(10)), 0, -.33, 0); G.dress.scale(1, 1, .78);
+  G.inner = box(.11, .46, .02, 0, .33, .118, -.08);
+  return G;
 }
 let SEAT_TPL = null;
-/* a passenger sitting on a car seat, dressed like the people on the platforms (same shapes, same clothes, skin and hair
-   colours): facing +z, hips on the cushion (top at y0), back to the backrest, hands on the lap, knees bent, feet on the
-   floor. (The passengers in the cars used to be a coloured box with a ball on top.) */
-function seatedPerson(B, x, y0, z, floor, rr) {
-  const T = SEAT_TPL || (SEAT_TPL = (() => { const G = personGeo(true), o = {}; for (const k in G) o[k] = mkTpl(G[k]); return o; })());
+/* a passenger sitting on a car seat, dressed like the people on the platforms (same shapes and the same dressing rules):
+   facing +z, hips on the cushion (top at y0), back just clear of the backrest (they used to sit inside it), hands on the
+   lap, knees bent, feet on the floor */
+function seatedPerson(B, x, y0, z, floor, rr, BL) {
+  const T = SEAT_TPL || (SEAT_TPL = (() => { const G = personGeo(true), o = {}; for (const k in G) o[k] = mkTpl(G[k]); o.hair = o.hr; o.hairL = o.hl; return o; })());
   const p = { c: Passengers.colour(rr), work: false }; Passengers.dress(p, rr);
-  const bw = p.bw, h = .95 + rr() * .08, hip = y0 + .03, zb = z - .1, lean = .1, cl = Math.cos(lean), sl = Math.sin(lean);
+  const bw = p.bw, h = p.g === 'f' ? .93 + rr() * .06 : .98 + rr() * .07, hip = y0 + .03, zb = z + .05, lean = .1, cl = Math.cos(lean), sl = Math.sin(lean);
+  const lw = .9 + .1 * bw, lc = p.dress ? p.c : p.skirt ? p.skc : p.lc;
   B.add(T.tg, x, hip, zb, bw, h, bw, 0, lean, p.c); B.add(T.ng, x, hip, zb, bw, h, bw, 0, lean, p.c);
-  const hy = hip + (.64 * h + .1) * cl, hz = zb - (.64 * h + .1) * sl, turn = (rr() - .5) * .5;
-  B.add(T.hd, x, hy, hz, 1, 1, 1, turn, 0, p.sk);
-  if (p.hc) { B.add(T.hr, x, hy, hz, 1, 1, 1, turn, 0, p.hc); if (p.long) B.add(T.hl, x, hy, hz, 1, 1, 1, turn, 0, p.hc); }
+  if (p.inner) B.add(T.inner, x, hip, zb, bw, h, bw, 0, lean, p.inner);
+  if (p.scarf) B.add(T.scarf, x, hip, zb, bw, h, bw, 0, lean, p.scc);
+  B.add(T.hip, x, hip + .02, zb + .02, bw, 1, bw, 0, 0, lc);
+  const hy = hip + (.64 * h + .1) * cl, hz = zb - (.64 * h + .1) * sl, turn = (rr() - .5) * .5, H = (k, c) => B.add(T[k], x, hy, hz, 1, 1, 1, turn, 0, c);
+  H('hd', p.sk); for (const k of Passengers.headParts(p)) H(k[0], k[1]);
+  /* the simple version for distant cars: torso, head, main hair, arms, thighs (no face, hands or shoes) */
+  if (BL) { BL.add(T.tg, x, hip, zb, bw, h, bw, 0, lean, p.c); BL.add(T.hd, x, hy, hz, 1, 1, 1, turn, 0, p.sk); const hp = Passengers.headParts(p).find(k => ['hair', 'curly', 'bob', 'cap', 'beanie'].includes(k[0])); if (hp) BL.add(T[hp[0]], x, hy, hz, 1, 1, 1, turn, 0, hp[1]);
+    for (const sg of [-1, 1]) { BL.add(T.ag, x + sg * .235 * bw, hip + .53 * h * cl, zb - .53 * h * sl, 1, h, 1, 0, .68, p.ac); BL.add(T.lg, x + sg * .095 * bw, hip + .06, zb + .02, lw, .54, lw, 0, Math.PI / 2, lc); } }
   for (const sg of [-1, 1]) {
-    B.add(T.ag, x + sg * .235 * bw, hip + .53 * h * cl, zb - .53 * h * sl, 1, h, 1, 0, .55 + rr() * .2, p.ac);                     /* arm, hand on the lap */
-    const lx = x + sg * .095 * bw, kz = zb + .02 + .45, ky = hip + .06;
-    B.add(T.lg, lx, ky, zb + .02, .9 + .1 * bw, .54, .9 + .1 * bw, 0, Math.PI / 2, p.skirt ? p.skc : p.lc);                     /* thigh */
-    B.add(T.lg, lx, ky, kz, .9 + .1 * bw, Math.max(.3, (ky - floor) / .84), .9 + .1 * bw, 0, .12, p.lc);                         /* shin */
+    const ax = x + sg * .235 * bw, ay = hip + .53 * h * cl, az = zb - .53 * h * sl, ap = .62 + rr() * .12;
+    B.add(T.ag, ax, ay, az, 1, h, 1, 0, ap, p.ac); B.add(T.hand, ax, ay, az, 1, h, 1, 0, ap, p.sk);                               /* arm with shoulder, hand on the lap */
+    const lx = x + sg * .095 * bw, ky = hip + .06, kz = zb + .02 + .45, shin = Math.max(.3, (ky - floor) / .84);
+    B.add(T.lg, lx, ky, zb + .02, lw, .54, lw, 0, Math.PI / 2, lc);                                                             /* thigh */
+    B.add(T.knee, lx, ky, kz, lw * .95, lw * .95, lw * .95, 0, 0, lc);
+    B.add(T.lg, lx, ky, kz, lw, shin, lw, 0, .12, p.skirt || p.dress ? p.legc : p.lc);                                            /* shin */
+    B.add(T.shoe, lx, ky, kz, 1, shin, 1, 0, .12, p.shoe);                                                                        /* shoe at the end of the shin */
   }
 }
 const Passengers = {
   list: [], zone: null,
   init(scene) {
-    /* people: shoulders-wide flattened torso with a neck, oval head, hair (or a hard hat for railway staff), two arms and two
-       legs swinging in opposite phase, optional suitcase; every part is one instanced mesh (7 draw calls for up to 220 people) */
-    const { tg, ng, hd, hr, ag, lg, hl, sk } = personGeo(false), tgm = new THREE.BufferGeometry();
-    { const a = tg.toNonIndexed(), b = ng.toNonIndexed(), pa = a.attributes.position.array, pb = b.attributes.position.array, na = a.attributes.normal.array, nb = b.attributes.normal.array, P = new Float32Array(pa.length + pb.length), N = new Float32Array(na.length + nb.length);
-      P.set(pa); P.set(pb, pa.length); N.set(na); N.set(nb, na.length); tgm.setAttribute('position', new THREE.BufferAttribute(P, 3)); tgm.setAttribute('normal', new THREE.BufferAttribute(N, 3)); }
+    /* people: torso with neck, head with face, hair styles, arms with shoulders and hands, legs with shoes, pelvis, clothes
+       and accessories; every part is one instanced mesh (one draw call per part for up to 220 people) */
+    const G = personGeo(false), tgm = mergeGeos([G.tg, G.ng]);
     const bg = new THREE.BoxGeometry(.2, .46, .36); bg.translate(0, .23, 0);
     const hg = new THREE.SphereGeometry(.14, 8, 4, 0, TAU, 0, Math.PI / 2);
-    /* variety: long hair falling behind the head, a skirt over the upper legs, a backpack */
     const pk = new THREE.BoxGeometry(.28, .36, .13); pk.translate(0, .18, 0);
     const M = () => new THREE.MeshLambertMaterial({ color: 0xffffff });
-    this.body = new THREE.InstancedMesh(tgm, M(), MAXP); this.head = new THREE.InstancedMesh(hd, M(), MAXP); this.hair = new THREE.InstancedMesh(hr, M(), MAXP);
-    this.arms = new THREE.InstancedMesh(ag, M(), MAXP * 2); this.legs = new THREE.InstancedMesh(lg, M(), MAXP * 2); this.bags = new THREE.InstancedMesh(bg, M(), MAXP); this.hats = new THREE.InstancedMesh(hg, M(), 40);
-    this.hairL = new THREE.InstancedMesh(hl, M(), MAXP); this.skirt = new THREE.InstancedMesh(sk, M(), MAXP); this.pack = new THREE.InstancedMesh(pk, M(), MAXP);
-    this.parts = [this.body, this.head, this.hair, this.arms, this.legs, this.bags, this.hats, this.hairL, this.skirt, this.pack];
+    const geo = { body: tgm, head: G.hd, eyes: G.eyes, pupils: G.pupils, browM: G.browM, browF: G.browF, mouth: G.mouth, hair: G.hr, hairL: G.hl, pony: G.pony, bun: G.bun, bob: G.bob, curly: G.curly, fringe: G.fringe, beard: G.beard, must: G.must,
+      glasses: G.glasses, cap: G.cap, beanie: G.beanie, ear: G.ear, phones: G.phones, scarf: G.scarf, inner: G.inner, hip: G.hip, arms: G.ag, hands: G.hand, legs: G.lg, shoes: G.shoe, bags: bg, hats: hg, skirt: G.sk, dress: G.dress, pack: pk };
+    const cap = { arms: MAXP * 2, hands: MAXP * 2, legs: MAXP * 2, shoes: MAXP * 2, hats: 40 };
+    this.P = {}; this.parts = [];
+    for (const k in geo) { const m = new THREE.InstancedMesh(geo[k], M(), cap[k] || MAXP); this.P[k] = m; this.parts.push(m); }
+    Object.assign(this, { body: this.P.body, head: this.P.head, hair: this.P.hair, arms: this.P.arms, legs: this.P.legs, bags: this.P.bags, hats: this.P.hats, hairL: this.P.hairL, skirt: this.P.skirt, pack: this.P.pack });
     /* the colour buffer is allocated for the full capacity up front: three.js sizes it from .count at the first setColorAt,
        which is 0 here, and an empty buffer drew every person black */
     for (const m of this.parts) { m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(m.instanceMatrix.count * 3).fill(1), 3); m.frustumCulled = false; m.count = 0; m.castShadow = false; scene.add(m); }
@@ -4268,15 +4362,42 @@ const Passengers = {
   clear() { this.list.length = 0; this.zone = null; for (const m of this.parts) m.count = 0; this.empty = true; },
   dress(p, rnd) {
     const r = rnd || Math.random, pick = a => a[Math.floor(r() * a.length)];
+    /* half women, half men */
+    p.g = p.g || (r() < .5 ? 'f' : 'm'); const f = p.g === 'f';
     p.lc = pick([[.12, .14, .22], [.2, .2, .22], [.22, .28, .42], [.35, .3, .22], [.08, .08, .09], [.42, .38, .3], [.3, .32, .35]]);
     p.sk = pick([[.93, .76, .62], [.87, .68, .53], [.76, .56, .41], [.6, .42, .3], [.42, .29, .2]]); p.bag = !p.work && r() < .32; p.bc = pick([[.15, .15, .17], [.5, .12, .1], [.15, .25, .45], [.4, .35, .3]]);
-    p.hc = r() < .07 ? null : pick([[.08, .06, .05], [.18, .11, .07], [.32, .2, .11], [.62, .48, .27], [.55, .55, .55], [.4, .16, .08]]);
+    const old = r() < .15;
+    p.hc = old ? pick([[.62, .62, .62], [.78, .78, .76], [.45, .44, .43]]) : pick([[.08, .06, .05], [.18, .11, .07], [.32, .2, .11], [.62, .48, .27], [.4, .16, .08], [.12, .08, .06]]);
+    if (f && !old && r() < .06) p.hc = pick([[.55, .12, .1], [.75, .45, .6], [.85, .72, .45]]);   /* dyed */
+    p.hs = f ? pick(['long', 'long', 'pony', 'pony', 'bun', 'bob', 'bob', 'curly', 'short']) : pick(['short', 'short', 'short', 'side', 'side', 'curly', 'bald', old ? 'bald' : 'short', 'long']);
+    if (p.hs === 'bald') p.hc = null;
+    p.beard = !f && r() < .3 ? (r() < .6 ? 'beard' : 'must') : null; p.bdc = p.hc || pick([[.25, .17, .1], [.55, .55, .55]]);
     p.ac = p.c.map(v => v * .88);   /* sleeves slightly darker than the front */
-    /* build (slim to heavy), hairstyle, skirt or trousers, backpack */
-    p.bw = pick([.88, .93, 1, 1, 1.05, 1.1, 1.18]); p.long = !!p.hc && r() < .35; p.skirt = !p.work && r() < (p.long ? .4 : .06);
-    if (p.skirt) { p.skc = r() < .5 ? p.lc : pick([[.12, .12, .14], [.45, .14, .16], [.2, .3, .5], [.6, .5, .35], [.32, .36, .26]]); p.lc = r() < .5 ? [.1, .1, .11] : p.sk.map(v => v * .95); }
+    /* build, skirt or dress or trousers, an open jacket over a shirt, shoes, backpack */
+    p.bw = f ? pick([.84, .88, .92, .96, 1, 1.06]) : pick([.94, 1, 1, 1.05, 1.1, 1.18]); p.long = p.hs === 'long';
+    p.dress = !p.work && f && r() < .18; p.skirt = !p.work && !p.dress && f && r() < .28;
+    if (p.skirt) p.skc = r() < .5 ? p.lc : pick([[.12, .12, .14], [.45, .14, .16], [.2, .3, .5], [.6, .5, .35], [.32, .36, .26]]);
+    p.legc = r() < .5 ? [.1, .1, .11] : p.sk.map(v => v * .95);   /* tights or bare legs under a skirt or dress */
+    p.inner = !p.work && !p.dress && r() < .3 ? pick([[.92, .92, .9], [.8, .82, .86], [.2, .2, .22], [.85, .78, .62], [.55, .65, .8]]) : null;
+    p.shoe = pick([[.08, .08, .09], [.08, .08, .09], [.3, .2, .12], [.92, .92, .92], [.6, .1, .1], [.2, .25, .4]]);
     p.pack = !p.work && !p.bag && r() < .18; p.pc = pick([[.12, .12, .14], [.2, .3, .5], [.5, .15, .12], [.25, .35, .22], [.6, .5, .2]]);
-    if (p.work) { p.c = [1, .42, .05]; p.ac = [.9, .38, .05]; p.lc = [.15, .18, .3]; }
+    /* face and accessories */
+    p.lip = f ? pick([[.72, .38, .38], [.75, .2, .25], [.8, .42, .5], [.62, .36, .32]]) : p.sk.map((v, i) => v * [.78, .62, .6][i]);
+    p.glasses = r() < .18; p.cap = !p.work && (f ? r() < .04 : r() < .12); p.beanie = !p.work && !p.cap && r() < .05; p.ear = f && r() < .4; p.phones = !p.work && !p.cap && !p.beanie && r() < .05; p.scarf = r() < .08;
+    p.capc = pick([[.12, .14, .3], [.8, .15, .12], [.12, .12, .13], [.9, .9, .88], [.25, .4, .25]]); p.scc = pick([[.7, .15, .15], [.2, .25, .45], [.85, .8, .6], [.3, .3, .32], [.45, .3, .5]]);
+    p.eyc = pick([[.12, .09, .07], [.18, .12, .07], [.2, .3, .45], [.25, .3, .18]]); p.earc = r() < .5 ? [1, .82, .35] : [.85, .86, .9]; p.glc = r() < .7 ? [.06, .06, .07] : [.45, .3, .15];
+    if (p.work) { p.c = [1, .42, .05]; p.ac = [.9, .38, .05]; p.lc = [.15, .18, .3]; p.inner = null; }
+  },
+  /* the parts on the head (relative to the head centre) and their colours for a dressed person */
+  headParts(p) {
+    const o = [['eyes', [.93, .92, .9]], ['pupils', p.eyc || [.12, .09, .07]], [p.g === 'f' ? 'browF' : 'browM', p.hc ? p.hc.map(v => v * .8) : [.3, .25, .2]], ['mouth', p.lip]], hat = p.cap || p.beanie || p.work, hc = p.hc;
+    if (hc) { const hs = p.hs;
+      if (hs === 'curly') { if (!hat) o.push(['curly', hc]); }
+      else if (hs === 'bob') o.push(['bob', hc]);
+      else { if (!hat) o.push(['hair', hc]); if (hs === 'side' && !hat) o.push(['fringe', hc]); if (hs === 'long') o.push(['hairL', hc]); if (hs === 'pony') o.push(['pony', hc]); if (hs === 'bun' && !hat) o.push(['bun', hc]); } }
+    if (p.beard) o.push([p.beard, p.bdc]);
+    if (p.glasses) o.push(['glasses', p.glc]); if (p.cap) o.push(['cap', p.capc]); if (p.beanie) o.push(['beanie', p.capc]); if (p.ear) o.push(['ear', p.earc]); if (p.phones) o.push(['phones', [.1, .1, .11]]);
+    return o;
   },
   /* everyday clothes: muted colours with a few bright ones */
   colour(rnd) { const R = rnd || Math.random, P = [[.16, .2, .32], [.55, .55, .56], [.85, .84, .8], [.62, .53, .4], [.32, .36, .24], [.45, .14, .16], [.12, .12, .13], [.3, .4, .55], [.7, .55, .2], [.2, .42, .4], [.75, .3, .25], [.5, .62, .78]]; const c = P[Math.floor(R() * P.length)], j = .9 + R() * .2; return c.map(v => Math.min(1, v * j)); },
@@ -4366,7 +4487,9 @@ const Passengers = {
     }
     /* nobody on the platforms: the instanced meshes are emptied once and nothing is uploaded until people appear */
     if (!L.length) { if (!this.empty) { for (const m of this.parts) m.count = 0; this.empty = true; } return; } this.empty = false;
-    const M0 = this.M0, M1 = this.M1, M2 = this.M2, col = this.col; let nl = 0, na = 0, nb = 0, nh = 0, nr = 0, nlh = 0, ns = 0, np = 0;
+    const M0 = this.M0, M1 = this.M1, M2 = this.M2, HM = this.HM || (this.HM = new THREE.Matrix4()), col = this.col, P = this.P, cnt = {};
+    for (const key in P) cnt[key] = 0;
+    const put = (key, m, c) => { const mesh = P[key], i = cnt[key]; if (i >= mesh.instanceMatrix.count) return; mesh.setMatrixAt(i, m); col.setRGB(c[0], c[1], c[2]); mesh.setColorAt(i, col); cnt[key] = i + 1; };
     for (const p of L) {
       if ((p.st === 'out' || p.st === 'dis') && p.delay > 0) continue;
       if (!p.lc) this.dress(p);
@@ -4374,23 +4497,31 @@ const Passengers = {
       if (p.yt === undefined) p.yt = p.yaw || 0; const dy = Math.atan2(Math.sin((p.yaw || 0) - p.yt), Math.cos((p.yaw || 0) - p.yt)); p.yt += dy * Math.min(1, dt * 6);
       const walk = p.st === 'board' || p.st === 'out' || p.st === 'dis' || p.mv, sw = walk ? Math.sin(p.ph) * .5 : 0, bob = walk ? Math.abs(Math.cos(p.ph)) * .035 : Math.sin(p.t * .7 + p.ph) * .005, h = p.h, yaw = p.yt;
       M0.makeRotationY(yaw); M0.setPosition(p.x, p.y + bob, p.z);
-      const bw = p.bw || 1;
-      M1.makeTranslation(0, .84 * h, 0); M2.makeScale(bw, h, bw); M1.multiply(M2); this.body.setMatrixAt(k, M2.multiplyMatrices(M0, M1)); col.setRGB(p.c[0], p.c[1], p.c[2]); this.body.setColorAt(k, col);
-      M1.makeTranslation(0, 1.48 * h + .1, 0); this.head.setMatrixAt(k, M2.multiplyMatrices(M0, M1)); col.setRGB(p.sk[0], p.sk[1], p.sk[2]); this.head.setColorAt(k, col);
-      if (p.hc && !p.work) { this.hair.setMatrixAt(nr, M2); col.setRGB(p.hc[0], p.hc[1], p.hc[2]); this.hair.setColorAt(nr, col); nr++; if (p.long) { this.hairL.setMatrixAt(nlh, M2); this.hairL.setColorAt(nlh, col); nlh++; } }
-      if (p.skirt) { M1.makeTranslation(0, .9 * h, 0); M1.multiply(M2.makeScale(bw, h, bw)); this.skirt.setMatrixAt(ns, M2.multiplyMatrices(M0, M1)); col.setRGB(p.skc[0], p.skc[1], p.skc[2]); this.skirt.setColorAt(ns, col); ns++; }
-      if (p.pack) { M1.makeTranslation(0, 1.02 * h, -.125 * bw - .06); this.pack.setMatrixAt(np, M2.multiplyMatrices(M0, M1)); col.setRGB(p.pc[0], p.pc[1], p.pc[2]); this.pack.setColorAt(np, col); np++; }
+      const bw = p.bw || 1, lc = p.dress ? p.c : p.skirt ? p.skc : p.lc;
+      /* torso (with neck), the shirt of an open jacket, scarf, pelvis */
+      M1.makeTranslation(0, .84 * h, 0); M2.makeScale(bw, h, bw); M1.multiply(M2); M2.multiplyMatrices(M0, M1); put('body', M2, p.c);
+      if (p.inner) put('inner', M2, p.inner); if (p.scarf) put('scarf', M2, p.scc);
+      M1.makeTranslation(0, .86 * h, 0); M1.multiply(M2.makeScale(bw, 1, bw)); put('hip', M2.multiplyMatrices(M0, M1), lc);
+      /* head with face, hair, beard and accessories */
+      M1.makeTranslation(0, 1.48 * h + .1, 0); HM.multiplyMatrices(M0, M1); put('head', HM, p.sk);
+      for (const q of this.headParts(p)) put(q[0], HM, q[1]);
+      if (p.work) { M1.makeTranslation(0, 1.48 * h + .14, 0); put('hats', M2.multiplyMatrices(M0, M1), [1, .9, .15]); }
+      if (p.skirt) { M1.makeTranslation(0, .9 * h, 0); M1.multiply(M2.makeScale(bw, h, bw)); put('skirt', M2.multiplyMatrices(M0, M1), p.skc); }
+      if (p.dress) { M1.makeTranslation(0, .92 * h, 0); M1.multiply(M2.makeScale(bw, h, bw)); put('dress', M2.multiplyMatrices(M0, M1), p.c); }
+      if (p.pack) { M1.makeTranslation(0, 1.02 * h, -.125 * bw - .06); put('pack', M2.multiplyMatrices(M0, M1), p.pc); }
       for (const sg of [-1, 1]) {
-        M1.makeRotationX(sw * sg * (p.skirt ? .6 : 1)); M1.premultiply(M2.makeTranslation(sg * .095 * bw, .84 * h, 0)); M1.multiply(M2.makeScale(.9 + .1 * bw, h, .9 + .1 * bw)); this.legs.setMatrixAt(nl, M2.multiplyMatrices(M0, M1)); col.setRGB(p.lc[0], p.lc[1], p.lc[2]); this.legs.setColorAt(nl, col); nl++;
-        /* arms swing against the legs; a hand that holds the suitcase stays down */
+        /* leg with its shoe (same transform) */
+        M1.makeRotationX(sw * sg * (p.skirt || p.dress ? .6 : 1)); M1.premultiply(M2.makeTranslation(sg * .095 * bw, .84 * h, 0)); M1.multiply(M2.makeScale(.9 + .1 * bw, h, .9 + .1 * bw)); M2.multiplyMatrices(M0, M1);
+        put('legs', M2, p.skirt || p.dress ? p.legc : p.lc); put('shoes', M2, p.shoe);
+        /* arms swing against the legs; a hand that holds the suitcase stays down; shoulder and hand move with the arm */
         const carry = p.bag && sg > 0, ar = carry ? .05 : -sw * sg * .8;
-        M1.makeRotationX(ar); M1.premultiply(M2.makeTranslation(sg * .235 * bw, 1.37 * h, 0)); M1.multiply(M2.makeRotationZ(sg * .07)); M1.multiply(M2.makeScale(1, h, 1)); this.arms.setMatrixAt(na, M2.multiplyMatrices(M0, M1)); col.setRGB(p.ac[0], p.ac[1], p.ac[2]); this.arms.setColorAt(na, col); na++;
+        M1.makeRotationX(ar); M1.premultiply(M2.makeTranslation(sg * .235 * bw, 1.37 * h, 0)); M1.multiply(M2.makeRotationZ(sg * .07)); M1.multiply(M2.makeScale(1, h, 1)); M2.multiplyMatrices(M0, M1);
+        put('arms', M2, p.ac); put('hands', M2, p.sk);
       }
-      if (p.bag) { M1.makeTranslation(.34, 0, walk ? -.25 : 0); this.bags.setMatrixAt(nb, M2.multiplyMatrices(M0, M1)); col.setRGB(p.bc[0], p.bc[1], p.bc[2]); this.bags.setColorAt(nb, col); nb++; }
-      if (p.work && nh < 40) { M1.makeTranslation(0, 1.48 * h + .14, 0); this.hats.setMatrixAt(nh, M2.multiplyMatrices(M0, M1)); col.setRGB(1, .9, .15); this.hats.setColorAt(nh, col); nh++; }
+      if (p.bag) { M1.makeTranslation(.34, 0, walk ? -.25 : 0); put('bags', M2.multiplyMatrices(M0, M1), p.bc); }
       k++;
     }
-    this.body.count = this.head.count = k; this.hair.count = nr; this.arms.count = na; this.legs.count = nl; this.bags.count = nb; this.hats.count = nh; this.hairL.count = nlh; this.skirt.count = ns; this.pack.count = np;
+    for (const key in P) P[key].count = cnt[key];
     for (const m of this.parts) { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
   }
 };
@@ -7427,7 +7558,7 @@ function initEngine() {
   cabLight = new THREE.PointLight(0xffe2b0, 0, 9, 1.5); camera.add(cabLight);
   initMaterials(); sky = new Sky(scene, camera); precip = new Precip(scene, 4000); FarLand.init(scene, sky);
   G.train = new Train(scene, SettingsManager.v.train, SettingsManager.v.tc[SettingsManager.v.train].nc); CabGlass.attach(G.train.loco); G.phys = new TrainPhysics(G.train.def); G.phys.setDef(G.train.def, G.train.nc); Sound.setProfile(G.train.def.snd); Limits.init(scene); Junctions.init(scene); Traffic.init(scene); Events.init(scene); Aviation.init(scene); Volcano.init(scene); BiomeFX.init(scene); Spaceport.init(scene); G.lim = { cur: 120, allowed: 40, next: null, atp: 'ok', mode: 'warn' }; G.atpBrake = 0; G.atpCut = false;
-  Dev.init(scene); StopMark.init(scene); WorldGen.init(scene); Passengers.init(scene); StationLife.init(); Wildlife.init(scene); Birds.init(scene); StationCat.init(scene); RailTraffic.init(scene); GlowPts.init(scene);
+  Dev.init(scene); StopMark.init(scene); WorldGen.init(scene); Passengers.init(scene); StationLife.init(); Wildlife.init(scene); Birds.init(scene); StationCat.init(scene); RailTraffic.init(scene); GlowPts.init(scene); LampFlare.init(scene);
   CamMgr.init(camera); InputManager.init($('gl')); UI.init(G);
   InputManager.onKey = onKey; window.addEventListener('resize', resize); window.addEventListener('orientationchange', () => setTimeout(resize, 200));
   document.addEventListener('visibilitychange', () => { if (document.hidden) G.save(); else { try { if (navigator.wakeLock && G.running && !G.wl) navigator.wakeLock.request('screen').then(l => { G.wl = l; }).catch(() => { }); } catch (e) { } } });
@@ -7530,7 +7661,7 @@ function frame(now) {
   if (G.inMenu && (G.menuF = (G.menuF || 0) + 1) % 3) { G.last = now; return; }
   /* paused (camera can still move): half rate is enough and halves the GPU work while nothing else changes */
   if (G.paused && !G.inMenu && (G.pauseF = (G.pauseF || 0) + 1) % 2) { G.last = now; return; }
-  GlowPts.begin();
+  GlowPts.begin(); LampFlare.begin();
   const raw = Math.min(.25, (now - G.last) / 1000); G.last = now; const dt = Math.min(.05, raw); G.dtLast = dt; if (!G.inMenu) Quality.sample(raw);
   const sim = G.paused ? 0 : dt; G.t += sim; const p = G.phys, tr = G.train, kb = InputManager.keys, id = CamMgr.id, walking = id === 'walk' || id === 'photo';
   /* controls */
@@ -7575,7 +7706,8 @@ function frame(now) {
   L.spot.intensity = G.lights ? 1.1 + 2.4 * night : 0; MH.head.color.setScalar(G.lights ? 1 : .18); MH.tail.color.setRGB(G.lights ? 1 : .2, 0, 0);
   const lc = .5 + .5 * night; MH.cabin.color.setRGB(lc, lc * .96, lc * .8);
   tr.glows(G.lights, night); RailTraffic.glows(night);
-  Beam.mat().uniforms.k.value = G.lights ? clamp(night * .55 + Env.fogK * .8 + Env.rain * .45 + Env.snow * .5 + Env.tunnel * .5 + Env.dust * .6, 0, 1.1) * (id === 'cab' ? .55 : 1) : 0;
+  Shaft.mat().uniforms.k.value = G.lights ? clamp(night * .9 + Env.fogK * .8 + Env.rain * .4 + Env.snow * .4 + Env.tunnel * .5 + Env.dust * .5, 0, 1.1) * (id === 'cab' ? .6 : 1) : 0; tr.shaftsFace(camera);
+  Beam.mat().uniforms.k.value = G.lights ? clamp(night * .95 + Env.fogK * .8 + Env.rain * .45 + Env.snow * .5 + Env.tunnel * .5 + Env.dust * .6, 0, 1.1) * (id === 'cab' ? .55 : 1) : 0;
   EnvMap.update(dt);
   cabLight.intensity = CamMgr.inside ? night * 1.0 * (G.cabinLight ? 1 : .3) : 0;
   if (G.wipers) UI.wipePhase += dt * 1.9; const sw = .5 + .5 * Math.sin(UI.wipePhase - Math.PI / 2), sweepNow = G.wipers ? sw : 0;
@@ -7598,7 +7730,7 @@ function frame(now) {
   const zs = Rail.zoneAt(p.s), pts = (zs.kind === 'station' && Math.abs(Math.abs(p.s - zs.c) - (Rail.stl(zs).P + 150)) < 140) || (zs.kind === 'junction' && Math.abs(p.s - zs.sj) < 70);
   Sound.hold(!!G.paused); Sound.update(dt, { axles: tr.axleW, lw, extK, jointed: vn1(p.s / 9000, Rail.seed + 41) <= .38 || bio.stf > .2, points: pts, comp: p.p < 4.9 && p.brake < .08 && !p.emerg, airPos: Aviation.loudPos, speed: p.v, thr: p.throttle, brakeF: (5 - p.p) / 5, inside: id === 'cab' ? 1 : id === 'roof' ? .3 : (id === 'walk' || id === 'pass') ? .7 : 0, cam: id === 'cab' ? 'cab' : (id === 'walk' || id === 'pass') ? 'pass' : 'ext', rain: Env.rain, wind: Env.wind, tunnel: Env.tunnel, bridge: bio.deck ? 1 : 0, near: clamp(1 - dist / 160, 0, 1) * (Passengers.list.length > 0 ? 1 : 0) * (.6 + Math.min(.8, Passengers.list.length / 70)), oth: RailTraffic.loud(camera.position), urban: bio.urban, road: Traffic.near, air: Math.max(Aviation.loud, Spaceport.launch ? .0 : 0), forest: bio.forest, day: Env.day, dp: G.dp || 0 });
   Music.update(dt, SettingsManager.v.musicOn);
-  GlowPts.end(camera, renderer);
+  GlowPts.end(camera, renderer); LampFlare.end(renderer);
   /* height fog: the haze layer sits on the valley floor of the line near the train and is thicker in mist, rain and snow */
   FOGHB.x = Rail.ty(p.s) - 2; FOGHB.y = 190 + 450 * Env.fogK + 260 * Env.rain + 200 * Env.snow + (Env.mapMode ? 2000 : 0);
   FarLand.update(camera, p.s, sky, QL.detail > 1 ? 2.5 : 1.5);
