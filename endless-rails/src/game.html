@@ -3155,7 +3155,7 @@ function buildLoco(opt) {
     for (const x of [-.98, .98]) { Geo.cylZ(sh, x, .84, -10.55, -10, .085, [.14, .14, .15], 8); Geo.cylZ(sh, x, .84, -10.64, -10.55, .19, [.5, .5, .52], 10); }
   }
   g.add(sh.build(MAT.trainBody, true)); const cabMesh = cab.build(MAT.lit); if (cabMesh) g.add(cabMesh); g.add(lens.build(MH.head));
-  if (ext) { const sp = new THREE.SpotLight(0xfff0d0, 0, 380, .38, .55, 1.1); return { g, axles, heads: [[-1.0, 1.45, 10.1], [1.0, 1.45, 10.1], [0, 3.38, 10.1]], beam: [0, 1.45, 10.1], spot: null, wipers: [], len: 20 }; }
+  if (ext) { const sp = new THREE.SpotLight(0xfff0d0, 0, 380, .38, .55, 1.1); return { g, axles, heads: [[-1.0, 1.45, 10.1], [1.0, 1.45, 10.1], [0, 3.38, 10.1]], beams: [[-1.0, 1.45, 10.0], [1.0, 1.45, 10.0]], spot: null, wipers: [], len: 20 }; }
   /* instrument displays are part of the sloped instrument faces (not floating screens) */
   const face = (cw, ch, w, h, x, zA, yA, zB, yB, t) => {
     const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch; const tex = new THREE.CanvasTexture(cv); tex.anisotropy = 4;
@@ -3179,7 +3179,7 @@ function buildLoco(opt) {
   const wipers = [];
   for (const x of [.02, -1.1]) { const p = mkWiper(1.12); p.position.set(x, 2.07, FZ + .018); g.add(p); wipers.push(p); }
   const spot = new THREE.SpotLight(0xfff0d0, 0, 380, .38, .55, 1.1); spot.position.set(0, 2.4, 10); const tg = new THREE.Object3D(); tg.position.set(0, 1.2, 60); g.add(tg); spot.target = tg; g.add(spot);
-  return { g, cv, tex, cv2, tex2, thrL, brkL, wipers, wiperLen: 1.12, wipeA: [-1.45, .15], glassSpec, spot, cabMesh, axles, heads: [[-1.0, 1.45, 10.1], [1.0, 1.45, 10.1], [0, 3.38, 10.1]], beam: [0, 1.45, 10.1] };
+  return { g, cv, tex, cv2, tex2, thrL, brkL, wipers, wiperLen: 1.12, wipeA: [-1.45, .15], glassSpec, spot, cabMesh, axles, heads: [[-1.0, 1.45, 10.1], [1.0, 1.45, 10.1], [0, 3.38, 10.1]], beams: [[-1.0, 1.45, 10.0], [1.0, 1.45, 10.0]] };
 }
 
 function buildCar(idx, rr, opt) {
@@ -3217,7 +3217,7 @@ function buildCar(idx, rr, opt) {
   for (let z = -6.6; z < 6.4; z += 1.1) for (const sg of [-1, 1]) {
     const c = ((z * 3) | 0) % 2 ? L.seat1 : L.seat2, x0 = sg > 0 ? .4 : -1.3, x1 = sg > 0 ? 1.3 : -.4;
     b.aabb(x0, x1, .95, 1.4, z - .25, z + .25, c); b.aabb(x0, x1, 1.4, 2.15, z - .27, z - .17, c);
-    for (let k = 0; k < 2; k++) if (rr() < .38) { const sx = x0 + (k + .5) * .45; if (Math.abs(z + 1.1) < .3) continue; /* the row of the 'carriage window' camera stays free (it can turn all the way round now, a face right beside it filled the view) */ b.aabb(sx - .16, sx + .16, 1.4, 2.0, z - .15, z + .12, [.2 + rr() * .5, .2 + rr() * .3, .25 + rr() * .3]); b.add(TPL.ico, sx, 2.2, z - .02, .26, .3, .26, 0, 0, [.8, .62, .5]); }
+    for (let k = 0; k < 2; k++) if (rr() < .38 * Math.min(1, QL.pax || 1)) { const sx = x0 + (k + .5) * .45;   /* fewer seated passengers on low graphics */ if (Math.abs(z + 1.1) < .3) continue; /* the row of the 'carriage window' camera stays free (it can turn all the way round now, a face right beside it filled the view) */ seatedPerson(b, sx, 1.4, z, .95, rr); }
   }
   for (const z of [-7, -2.3, 2.3, 7]) lamp.aabb(-.4, .4, YS - .05, YS, z - .5, z + .5, [1, 1, 1]);
   /* smooth outer shell: rounded roof, window and door openings cut out, glass behind */
@@ -3295,7 +3295,7 @@ const Beam = {
     if (this.m) return this.m;
     this.m = new THREE.ShaderMaterial({ uniforms: { k: { value: 0 }, col: { value: new THREE.Color(1, .95, .85) } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
       vertexShader: 'varying float vV; varying float vF; void main(){ vV = uv.y; vec4 mv = modelViewMatrix*vec4(position,1.0); vec3 n = normalize(normalMatrix*normal); vF = abs(dot(n, normalize(-mv.xyz))); gl_Position = projectionMatrix*mv; }',
-      fragmentShader: 'uniform float k; uniform vec3 col; varying float vV; varying float vF; void main(){ float a = k * pow(1.0 - vV, 1.8) * pow(vF, 1.3) * 0.2 * smoothstep(0.0, 0.05, vV); if (a < 0.002) discard; gl_FragColor = vec4(col, a); }' });   /* fades in over the first ~4 m: no bright tube where the cone starts at the lamps */
+      fragmentShader: 'uniform float k; uniform vec3 col; varying float vV; varying float vF; void main(){ float a = k * pow(1.0 - vV, 1.8) * pow(vF, 1.3) * 0.2 * smoothstep(0.0, 0.012, vV); if (a < 0.002) discard; gl_FragColor = vec4(col, a); }' });   /* fades in over the first metre: the light leaves the lamp without a hard-edged start */
     this.m.userData.shared = true; return this.m;
   }
 };
@@ -3315,8 +3315,10 @@ class Train {
     const wl = []; this.axleW = [];
     for (const it of this.items) { const ax = it.kind === 'loco' ? this.loco.axles : it.car.axles; for (const z of ax || []) { wl.push({ g: it.g, z, r: .46 }); this.axleW.push(it.off + it.len / 2 - z); } }
     this.wheels = new WheelRig(scene, wl); this.axleW.sort((a, b) => a - b);
-    /* headlight beam: a soft additive cone that shows up in fog, rain and at night */
-    this.beam = new THREE.Mesh(BeamGeo(), Beam.mat()); const bp = this.loco.beam || [0, 1.45, 10]; this.beam.position.set(bp[0], bp[1], bp[2]); this.beam.frustumCulled = false; this.beam.renderOrder = 8; this.loco.g.add(this.beam);
+    /* headlight beams: soft additive cones that show up in fog, rain and at night, one starting at each headlight (the two
+       overlap a few metres ahead, so each is a little narrower and the pair is about as bright as the single cone was) */
+    this.beams = (this.loco.beams || [this.loco.beam || [0, 1.45, 10]]).map(bp => { const m = new THREE.Mesh(BeamGeo(), Beam.mat()); m.position.set(bp[0], bp[1], bp[2]); m.scale.set(.78, .78, 1); m.frustumCulled = false; m.renderOrder = 8; this.loco.g.add(m); return m; });
+    this.beam = this.beams[0];
     this.tailCar = this.cars.length ? this.cars[this.cars.length - 1] : null;
     this.dir = 1; this.sway = 0; this.v3 = new THREE.Vector3();
   }
@@ -3486,24 +3488,29 @@ function buildHSLoco(opt) {
   /* flat belly pan under the nose (so low cameras never look into the hull) */
   for (let i = 0; i < zs.length - 1; i++) { if (zs[i + 1] <= N0) continue; const a = rings[i].pts[0], b = rings[i + 1].pts[0], n = [0, -1, 0];
     Geo.quad(sh, [a[0], a[1], zs[i]], [-a[0], a[1], zs[i]], [-b[0], b[1], zs[i + 1]], [b[0], b[1], zs[i + 1]], n, n, n, n, [.12, .13, .15]); }
-  /* headlight clusters in the nose flanks along the accent stripe (tail lamps share the housings): a teardrop lens that
-     follows the curve of the nose (wider at the front), in a dark bezel, with a daytime-running strip above it. (They
-     used to be 5 x 12 cm slits that could hardly be seen.) */
-  const heads = [];
-  { const at = tz => { const z = N0 + tz * (N1 - N0), r = hsSec(z), ys = r.top - Math.min(r.ry, (r.top - r.bot) * .6, r.hw * 1.1); return { z, y: r.bot + (HSN.FR[2] + HSN.FR[3]) / 2 * (ys - r.bot), x: r.hw * (1 - r.tum * .5) * .985 }; };
-    const T0 = .655, T1 = .765, NS = 10, hgt = t => .075 + .15 * Math.sin(t * Math.PI * .86), BEZ = [.08, .085, .1];
+  /* headlights at the front of the nose, in the manner of the player's reference (a modern high-speed train): on each side
+     a slim "eye" light strip, pointed at the rear end and widest towards the front, set in a gloss-black band that follows
+     the curve of the nose; the strips light up white and the beams start from them. (Earlier versions had slits, then a
+     teardrop, low on the flanks near the bogie, where they could not be seen from the front.) */
+  const heads = [], beams = [];
+  { const T0 = .865, T1 = .985, NS = 14, EYE = [1, 1, 1], MASK = [.035, .04, .05];
+    /* centre line of the eye: almost level at about the middle of the nose end, rising a little towards the rear */
+    const at = (t, dy) => { const tz = T0 + (T1 - T0) * t, z = N0 + tz * (N1 - N0), r = hsSec(z), y = 1.06 + (1 - t) * .07 + (dy || 0), x = Geo.xAt(r, y), x2 = Geo.xAt(r, y + .02), x3 = Geo.xAt(hsSec(z + .05), y); return { z, y, x, dxdy: (x2 - x) / .02, dxdz: (x3 - x) / .05 }; };
+    const hEye = t => .145 * Math.pow(Math.sin(Math.PI * (.03 + .94 * t)), .5) * (.5 + .5 * t);
     for (const sg of [-1, 1]) {
-      const strip = (B, off, grow, dy, hf, col) => { for (let i = 0; i < NS; i++) { const ta = i / NS, tb = (i + 1) / NS, A = at(T0 + (T1 - T0) * ta), Bq = at(T0 + (T1 - T0) * tb), ha = hf ? hf(ta) : hgt(ta) + grow, hb = hf ? hf(tb) : hgt(tb) + grow, xa = sg * (A.x + off), xb = sg * (Bq.x + off), n = [sg, 0, 0];
-        const a = [xa, A.y + dy - ha / 2, A.z], b = [xb, Bq.y + dy - hb / 2, Bq.z], c = [xb, Bq.y + dy + hb / 2, Bq.z], d = [xa, A.y + dy + ha / 2, A.z];
-        if (sg > 0) Geo.quad(B, a, d, c, b, n, n, n, n, col); else Geo.quad(B, a, b, c, d, n, n, n, n, col); } };
-      strip(sh, .006, .07, 0, null, BEZ);                                                              /* bezel */
-      strip(lens, .014, 0, 0, null, [1, 1, 1]);                                                        /* lens */
-      { const lift = t => hgt(t) / 2 + .055; for (let i = 0; i < NS; i++) { const ta = i / NS, tb = (i + 1) / NS, A = at(T0 + (T1 - T0) * (.15 + .85 * ta)), Bq = at(T0 + (T1 - T0) * (.15 + .85 * tb)), xa = sg * (A.x + .012), xb = sg * (Bq.x + .012), n = [sg, 0, 0];
-        const a = [xa, A.y + lift(.15 + .85 * ta) - .012, A.z], b = [xb, Bq.y + lift(.15 + .85 * tb) - .012, Bq.z], c = [xb, Bq.y + lift(.15 + .85 * tb) + .012, Bq.z], d = [xa, A.y + lift(.15 + .85 * ta) + .012, A.z];
-        if (sg > 0) Geo.quad(lens, a, d, c, b, n, n, n, n, [1, 1, 1]); else Geo.quad(lens, a, b, c, d, n, n, n, n, [1, 1, 1]); } }   /* daytime-running strip */
-      const C = at(T0 + (T1 - T0) * .62); heads.push([sg * (C.x + .06), C.y, C.z]);
+      const strip = (B, t0, t1, off, hf, col) => { for (let i = 0; i < NS; i++) {
+        const ta = t0 + (t1 - t0) * i / NS, tb = t0 + (t1 - t0) * (i + 1) / NS, A = at(ta), Bp = at(tb), ha = hf(ta), hb = hf(tb);
+        /* the true surface normal (the nose narrows towards the tip, so near the front it also faces forward): the strips are
+           lifted off the hull along it, otherwise the far eye sank into the tapering surface when seen from the front */
+        const nrm = q => { const l = Math.hypot(1, q.dxdy, q.dxdz); return [sg / l, -q.dxdy / l, -q.dxdz / l]; }, na = nrm(A), nb = nrm(Bp);
+        const P = (q, dy) => { const n = nrm(q); return [sg * Geo.xAt(hsSec(q.z), q.y + dy) + n[0] * off, q.y + dy + n[1] * off, q.z + n[2] * off]; };
+        const a = P(A, -ha / 2), b = P(Bp, -hb / 2), c = P(Bp, hb / 2), d = P(A, ha / 2);
+        if (sg > 0) Geo.quad(B, a, d, c, b, na, nb, nb, na, col); else Geo.quad(B, a, b, c, d, na, na, nb, nb, col); } };
+      strip(sh, -.75, 1.08, .005, t => t >= 0 ? hEye(Math.min(1, t)) + .09 : .03 + (hEye(0) + .06) * Math.max(0, 1 + t / .75), MASK);   /* gloss-black band around the eye, tapering back along the nose */
+      strip(lens, 0, 1, .011, hEye, EYE);                                                                           /* the light strip */
+      const F = at(.72); heads.push([sg * (F.x + .05), F.y, F.z]); beams.push([sg * (F.x - .12), F.y, F.z - .2]);
     }
-    HSN.LAMP = at(T0 + (T1 - T0) * .5); }
+    HSN.LAMP = at(.72); }
   /* gangway cover to the next car, pantograph with noise shields, roof fairing, cab door outline */
   Geo.hull(sh, { zs: [Z0 - .74, Z0 - .37, Z0], sec: () => ({ hw: 1.44, bot: 1.0, top: TOP - .06, ry: RY, tum: .03 }), col: () => [.2, .21, .23] });
   { const PG = [.16, .16, .18], pz = -7.6; sh.aabb(-.55, .55, TOP - .05, TOP + .1, pz - 1.2, pz + 1.2, [.7, .72, .76]);
@@ -3514,7 +3521,7 @@ function buildHSLoco(opt) {
     sh.aabb(d0, d1, 1.05, 2.95, -12.45, -12.4, DK); sh.aabb(d0, d1, 1.05, 2.95, -11.15, -11.1, DK);
     sh.aabb(Math.min(sg * 1.4, sg * 1.46), Math.max(sg * 1.4, sg * 1.46), .55, BOT + .04, -11.6, -7.2, BLU); sh.aabb(Math.min(sg * 1.4, sg * 1.46), Math.max(sg * 1.4, sg * 1.46), .55, BOT + .04, 3.4, 7.8, BLU); }
   g.add(sh.build(MAT.trainBody, true)); g.add(lens.build(opt.tail ? (opt.ai ? MH.aiTail : MH.tail) : MH.head));
-  const res = { g, axles, heads, beam: [0, HSN.LAMP.y, HSN.LAMP.z], len: 26 };   /* the beam starts inside the nose, level with the lamps, and leaves through the nose surface (it used to start in the air in front of the tip) */
+  const res = { g, axles, heads, beams, len: 26 };   /* one beam from each headlight (each starts just inside its lamp) */
   if (ext) return res;
   /* cab. The driver sits inside the hull under the windscreen canopy; the hull is single-sided, so from inside it is invisible.
      An inner shell that follows the hull (drawn from inside only) makes every part of the cab and of the hollow nose opaque
@@ -4203,24 +4210,50 @@ const WorldGen = {
 
 /* ===== Passengers (instanced figures on platforms, boarding / alighting) ===== */
 const MAXP = 220;
+/* the shapes of a person, shared by the people on the platforms (instanced, full detail) and the seated passengers inside
+   the cars (merged into the car mesh, a little coarser): torso, neck, head, hair, arm, leg, long hair, skirt */
+function personGeo(lo) {
+  const n = a => Math.max(4, Math.round(a * (lo ? .6 : 1)));
+  const tg = new THREE.CylinderGeometry(.2, .15, .6, n(10)); tg.scale(1, 1, .62); tg.translate(0, .3, 0);
+  const ng = new THREE.CylinderGeometry(.045, .05, .1, n(6)); ng.translate(0, .64, 0);
+  const hd = new THREE.SphereGeometry(.105, n(12), n(8)); hd.scale(1, 1.17, 1.06);
+  const hr = new THREE.SphereGeometry(.113, n(12), n(6), 0, TAU, 0, Math.PI * .56); hr.scale(1, 1.17, 1.08); hr.translate(0, .012, -.006);
+  const ag = new THREE.CylinderGeometry(.05, .042, .58, n(6)); ag.translate(0, -.29, 0);
+  const lg = new THREE.CylinderGeometry(.08, .062, .84, n(7)); lg.translate(0, -.42, 0);
+  const hl = new THREE.SphereGeometry(.112, n(10), n(6)); hl.scale(1, 1.75, .6); hl.translate(0, -.1, -.055);
+  const sk = new THREE.CylinderGeometry(.17, .27, .46, n(10)); sk.scale(1, 1, .75); sk.translate(0, -.23, 0);
+  return { tg, ng, hd, hr, ag, lg, hl, sk };
+}
+let SEAT_TPL = null;
+/* a passenger sitting on a car seat, dressed like the people on the platforms (same shapes, same clothes, skin and hair
+   colours): facing +z, hips on the cushion (top at y0), back to the backrest, hands on the lap, knees bent, feet on the
+   floor. (The passengers in the cars used to be a coloured box with a ball on top.) */
+function seatedPerson(B, x, y0, z, floor, rr) {
+  const T = SEAT_TPL || (SEAT_TPL = (() => { const G = personGeo(true), o = {}; for (const k in G) o[k] = mkTpl(G[k]); return o; })());
+  const p = { c: Passengers.colour(rr), work: false }; Passengers.dress(p, rr);
+  const bw = p.bw, h = .95 + rr() * .08, hip = y0 + .03, zb = z - .1, lean = .1, cl = Math.cos(lean), sl = Math.sin(lean);
+  B.add(T.tg, x, hip, zb, bw, h, bw, 0, lean, p.c); B.add(T.ng, x, hip, zb, bw, h, bw, 0, lean, p.c);
+  const hy = hip + (.64 * h + .1) * cl, hz = zb - (.64 * h + .1) * sl, turn = (rr() - .5) * .5;
+  B.add(T.hd, x, hy, hz, 1, 1, 1, turn, 0, p.sk);
+  if (p.hc) { B.add(T.hr, x, hy, hz, 1, 1, 1, turn, 0, p.hc); if (p.long) B.add(T.hl, x, hy, hz, 1, 1, 1, turn, 0, p.hc); }
+  for (const sg of [-1, 1]) {
+    B.add(T.ag, x + sg * .235 * bw, hip + .53 * h * cl, zb - .53 * h * sl, 1, h, 1, 0, .55 + rr() * .2, p.ac);                     /* arm, hand on the lap */
+    const lx = x + sg * .095 * bw, kz = zb + .02 + .45, ky = hip + .06;
+    B.add(T.lg, lx, ky, zb + .02, .9 + .1 * bw, .54, .9 + .1 * bw, 0, Math.PI / 2, p.skirt ? p.skc : p.lc);                     /* thigh */
+    B.add(T.lg, lx, ky, kz, .9 + .1 * bw, Math.max(.3, (ky - floor) / .84), .9 + .1 * bw, 0, .12, p.lc);                         /* shin */
+  }
+}
 const Passengers = {
   list: [], zone: null,
   init(scene) {
     /* people: shoulders-wide flattened torso with a neck, oval head, hair (or a hard hat for railway staff), two arms and two
        legs swinging in opposite phase, optional suitcase; every part is one instanced mesh (7 draw calls for up to 220 people) */
-    const tg = new THREE.CylinderGeometry(.2, .15, .6, 10); tg.scale(1, 1, .62); tg.translate(0, .3, 0);
-    const ng = new THREE.CylinderGeometry(.045, .05, .1, 6); ng.translate(0, .64, 0); const tgm = new THREE.BufferGeometry();
+    const { tg, ng, hd, hr, ag, lg, hl, sk } = personGeo(false), tgm = new THREE.BufferGeometry();
     { const a = tg.toNonIndexed(), b = ng.toNonIndexed(), pa = a.attributes.position.array, pb = b.attributes.position.array, na = a.attributes.normal.array, nb = b.attributes.normal.array, P = new Float32Array(pa.length + pb.length), N = new Float32Array(na.length + nb.length);
       P.set(pa); P.set(pb, pa.length); N.set(na); N.set(nb, na.length); tgm.setAttribute('position', new THREE.BufferAttribute(P, 3)); tgm.setAttribute('normal', new THREE.BufferAttribute(N, 3)); }
-    const hd = new THREE.SphereGeometry(.105, 12, 8); hd.scale(1, 1.17, 1.06);
-    const hr = new THREE.SphereGeometry(.113, 12, 6, 0, TAU, 0, Math.PI * .56); hr.scale(1, 1.17, 1.08); hr.translate(0, .012, -.006);
-    const ag = new THREE.CylinderGeometry(.05, .042, .58, 6); ag.translate(0, -.29, 0);
-    const lg = new THREE.CylinderGeometry(.08, .062, .84, 7); lg.translate(0, -.42, 0);
     const bg = new THREE.BoxGeometry(.2, .46, .36); bg.translate(0, .23, 0);
     const hg = new THREE.SphereGeometry(.14, 8, 4, 0, TAU, 0, Math.PI / 2);
     /* variety: long hair falling behind the head, a skirt over the upper legs, a backpack */
-    const hl = new THREE.SphereGeometry(.112, 10, 6); hl.scale(1, 1.75, .6); hl.translate(0, -.1, -.055);
-    const sk = new THREE.CylinderGeometry(.17, .27, .46, 10); sk.scale(1, 1, .75); sk.translate(0, -.23, 0);
     const pk = new THREE.BoxGeometry(.28, .36, .13); pk.translate(0, .18, 0);
     const M = () => new THREE.MeshLambertMaterial({ color: 0xffffff });
     this.body = new THREE.InstancedMesh(tgm, M(), MAXP); this.head = new THREE.InstancedMesh(hd, M(), MAXP); this.hair = new THREE.InstancedMesh(hr, M(), MAXP);
@@ -4233,8 +4266,8 @@ const Passengers = {
     this.dummy = new THREE.Object3D(); this.col = new THREE.Color(); this.v = new THREE.Vector3(); this.M0 = new THREE.Matrix4(); this.M1 = new THREE.Matrix4(); this.M2 = new THREE.Matrix4();
   },
   clear() { this.list.length = 0; this.zone = null; for (const m of this.parts) m.count = 0; this.empty = true; },
-  dress(p) {
-    const r = Math.random, pick = a => a[Math.floor(r() * a.length)];
+  dress(p, rnd) {
+    const r = rnd || Math.random, pick = a => a[Math.floor(r() * a.length)];
     p.lc = pick([[.12, .14, .22], [.2, .2, .22], [.22, .28, .42], [.35, .3, .22], [.08, .08, .09], [.42, .38, .3], [.3, .32, .35]]);
     p.sk = pick([[.93, .76, .62], [.87, .68, .53], [.76, .56, .41], [.6, .42, .3], [.42, .29, .2]]); p.bag = !p.work && r() < .32; p.bc = pick([[.15, .15, .17], [.5, .12, .1], [.15, .25, .45], [.4, .35, .3]]);
     p.hc = r() < .07 ? null : pick([[.08, .06, .05], [.18, .11, .07], [.32, .2, .11], [.62, .48, .27], [.55, .55, .55], [.4, .16, .08]]);
@@ -4246,7 +4279,7 @@ const Passengers = {
     if (p.work) { p.c = [1, .42, .05]; p.ac = [.9, .38, .05]; p.lc = [.15, .18, .3]; }
   },
   /* everyday clothes: muted colours with a few bright ones */
-  colour() { const P = [[.16, .2, .32], [.55, .55, .56], [.85, .84, .8], [.62, .53, .4], [.32, .36, .24], [.45, .14, .16], [.12, .12, .13], [.3, .4, .55], [.7, .55, .2], [.2, .42, .4], [.75, .3, .25], [.5, .62, .78]]; const c = P[Math.floor(Math.random() * P.length)], j = .9 + Math.random() * .2; return c.map(v => Math.min(1, v * j)); },
+  colour(rnd) { const R = rnd || Math.random, P = [[.16, .2, .32], [.55, .55, .56], [.85, .84, .8], [.62, .53, .4], [.32, .36, .24], [.45, .14, .16], [.12, .12, .13], [.3, .4, .55], [.7, .55, .2], [.2, .42, .4], [.75, .3, .25], [.5, .62, .78]]; const c = P[Math.floor(R() * P.length)], j = .9 + R() * .2; return c.map(v => Math.min(1, v * j)); },
   /* people spread over every platform of the station, proportionally to its length */
   spawnWaiting(z) {
     this.clear(); this.zone = z; const st = Rail.stl(z), cat = st.cat, base = { halt: 4, small: 9, regional: 22, big: 38, hs: 40, freight: 3, junction: 6, mountain: 10, river: 14 }[cat] * (Stations.festive === z.zi ? 1.8 : 1);

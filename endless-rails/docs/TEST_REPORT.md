@@ -877,3 +877,20 @@ bitmap textures except the existing window textures), same mechanics, cameras, t
   wipers through the whole sweep, the birds event filmed from the cab and the chase camera. Short soak (52 game days,
   HS train, 8 cars, all events, 15 station stops, 3 turnarounds, 5 reloads, 2 language switches): 0 errors, no objects on
   the rails, no camera under the ground; boot without errors; APK (offline) and standalone page rebuilt.
+
+## Update 23 Nov 2026 (22): HS headlights after the player's reference; passengers in the cars like those on the platforms
+* HS headlights redone after the player's reference photo of a modern high-speed train: on each side of the front of the
+  nose (85-99 % of the nose length, about mid-height) a slim "eye" light strip, pointed at the rear and widest towards
+  the front, set in a gloss-black band that follows the curve of the nose and tapers back along it. The strips are lifted
+  off the hull along its true normal, so both eyes are visible head-on (near the tip the nose faces forward). The previous
+  lamps sat low on the flanks next to the bogie, where they could not be seen from the front.
+* The light comes from the lamps: one beam cone starts at each headlight (both trains; the classic beams start at its two
+  lower lamps), each a little narrower so the pair is as bright as the old single cone; the fade-in is now about 1 m.
+* Passengers in the cars: they were a coloured box with a ball on top. They are now seated people built from the same
+  shapes as the people on the platforms (torso, neck, head, hair, long hair, arms, legs) and dressed by the same rules
+  (clothes, skin and hair colours, build, skirts): hips on the cushion, back to the backrest, hands on the lap, knees bent,
+  feet on the floor. The shapes are shared code (personGeo), slightly coarser inside the cars: about 200 triangles each,
+  a 15-car train about 50 k triangles more; on low graphics the cars hold half as many passengers.
+* Checks: HS nose from the front, both front quarters and the side, by day (lights on/off), at dusk and at night; the
+  player's reference beside the new nose; car interiors (walk camera) and windows from outside, classic and HS, before /
+  after; boot without errors; short soak (36 game days, HS, 12 cars, all events, 10 station stops, 4 reloads): 0 errors.
