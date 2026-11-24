@@ -944,7 +944,8 @@ Full report (Ukrainian): `docs/release/AUDIT_REPORT_UK.md`; run/build/ads/signin
   consent check / ad pre-load at start; lint findings; ads SDK 25.5.0; dead code; Windows installer running-app check.
 * **Balloons event:** a soak flag (“object on the rails”) turned out to be a **harness artefact** (stale world matrix of a
   never-rendered group). Direct check: every balloon ≥ 53 m above the line after its full drift. A protective minimum
-  height over any nearby stretch of line was added anyway; the harness now updates matrices before checking.
+  height over any nearby stretch of line was added anyway; the harness now updates matrices before checking. Re-run (2 worlds,
+  440 game days, 90 balloon events, 50 placement checks): 0 objects on the track or ballast, 0 errors.
 * **Tests:** 7 modes × trains × 10 cameras and controls (0 console errors); audio lifecycle (music off = 0 voices, no
   doubling, hidden → suspended + auto-pause, resume, master 0); saves across reload (language, 9 settings, seed, position,
   camera, mode, train, weather, time); UI at 11 sizes (0 overflow/overlap/clipping); soak 512 game days / 1058 km / 1458
