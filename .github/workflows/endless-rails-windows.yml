@@ -10,6 +10,7 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: endless-rails-windows
@@ -25,6 +26,7 @@ jobs:
         run: go build -trimpath -ldflags "-H windowsgui -s -w" -o dist/EndlessRails.exe .
 
       - name: Smoke test (launch, play, close, relaunch)
+        timeout-minutes: 8
         shell: pwsh
         run: |
           npm install --no-save --no-audit --no-fund playwright-core@1.49.1
