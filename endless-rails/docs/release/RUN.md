@@ -9,9 +9,9 @@
 
 Install an APK: copy it to the phone → open it → allow “Install unknown apps” for the file manager / browser when asked.
 Or with a computer: `adb install -r ENDLESS_RAILS.apk`.
-* If an older ENDLESS RAILS from earlier test builds is installed **signed with a different key**, Android refuses the
-  update (“App not installed”): uninstall the old one first (this deletes its saved journey). Builds given out during
-  development were signed with the same key as this release, so they update in place.
+* The test APKs handed out during development were a separate app (package `com.endlessrails.game.test`): the release
+  (`com.endlessrails.game`) installs **next to** it, not over it, and starts with a fresh journey. Uninstall the old test
+  app when you no longer need it (its progress is not transferred).
 * The game starts in landscape; *Settings ▸ Graphics ▸ Screen orientation* allows portrait. Back gesture closes menus,
   then opens the main menu; on the main menu it exits.
 * Internet is needed only for the optional ads and the consent form; the game itself runs offline.

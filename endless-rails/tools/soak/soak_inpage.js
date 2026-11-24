@@ -60,7 +60,9 @@
     E.__checked = true; const r = S.evr(E.def.id), P = r.place, c = E.c || Events.ctxNow(G);
     let hint = E.data && isFinite(E.data.s0) ? E.data.s0 : E.data && E.data.z && isFinite(E.data.z.c) ? E.data.z.c : c.s + c.dir * 700; const v = new THREE.Vector3(), h0 = hint; let unres = 0;
     let n = 0, onT = 0, onB = 0, minRail = 1e9, minGround = 1e9, below = 0, worst = null;
-    for (const o of E.objs) o.traverse(m => {
+    /* rendering is stubbed in the soak: bring the whole object tree's world matrices up to date first (a group that was
+       never drawn still has an identity world matrix, which put its children at the world origin) */
+    for (const o of E.objs) { o.updateMatrixWorld(true); } for (const o of E.objs) o.traverse(m => {
       if (!m.isMesh || !m.geometry || !m.geometry.attributes || !m.geometry.attributes.position) return;
       let vis = true; for (let q = m; q; q = q.parent) if (!q.visible) vis = false; if (!vis) return;
       m.updateMatrixWorld(true); const pa = m.geometry.attributes.position, stp = Math.max(1, Math.floor(pa.count / 300));

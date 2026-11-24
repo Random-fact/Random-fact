@@ -5,8 +5,8 @@
 | `ENDLESS_RAILS.apk`, `ENDLESS_RAILS.aab` (release) | project release key `release.keystore`, alias `endlessrails`, `CN=Endless Rails, O=Endless Rails`, valid until 2054 | APK Signature Scheme v2 (min SDK 24) | `01:BA:CD:9E:CC:95:99:87:B3:0E:46:57:46:6A:25:2D:9B:24:85:22:10:9D:E1:84:F4:F7:2C:D9:0A:BD:B9:4E` |
 | `ENDLESS_RAILS_debug.apk` | the standard Android debug key | v2 | `4E:BC:1E:65:B6:CA:A1:63:F3:C8:31:0B:E5:64:5A:74:31:BF:FA:96:92:76:79:32:C1:17:08:29:AB:F9:AF:A2` |
 
-* The release key is the same one that signed every APK handed out while the game was developed, so the release
-  installs over them as an update and keeps the player's saved journey.
+* The same key also signed the test APKs handed out during development, but those used a different package
+  (`com.endlessrails.game.test`), so the release installs next to them as a separate app.
 * **The keystore is not in the repository and not in the release ZIP** (`*.keystore`, `*.jks` and `keystore.properties`
   are git-ignored). It was handed over separately. Keep two offline copies; without it no update can be signed with
   the same key.
