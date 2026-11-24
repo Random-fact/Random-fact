@@ -1,0 +1,42 @@
+name: Endless Rails for Windows
+
+on:
+  push:
+    paths:
+      - 'endless-rails-windows/**'
+      - '.github/workflows/endless-rails-windows.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: endless-rails-windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: endless-rails-windows/go.mod
+          cache-dependency-path: endless-rails-windows/go.sum
+
+      - name: Build EndlessRails.exe
+        run: go build -trimpath -ldflags "-H windowsgui -s -w" -o dist/EndlessRails.exe .
+
+      - name: Smoke test (launch, play, close, relaunch)
+        shell: pwsh
+        run: |
+          npm install --no-save --no-audit --no-fund playwright-core@1.49.1
+          ./ci/smoke.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EndlessRails-Windows
+          path: endless-rails-windows/dist/EndlessRails.exe
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-screenshots
+          path: endless-rails-windows/smoke-out/
