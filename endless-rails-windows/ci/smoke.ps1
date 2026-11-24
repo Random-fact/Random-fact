@@ -14,19 +14,6 @@ function Save-Desktop($name) {
     $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
     $bmp.Save((Join-Path $out "$name.png"), [System.Drawing.Imaging.ImageFormat]::Png)
     Write-Host "desktop screenshot $name ($($b.Width)x$($b.Height))"
-    # also print a small JPEG into the log (artifacts are not always reachable)
-    $small = New-Object System.Drawing.Bitmap 640, 480
-    $g2 = [System.Drawing.Graphics]::FromImage($small)
-    $g2.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-    $g2.DrawImage($bmp, 0, 0, 640, 480)
-    $enc = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' }
-    $ep = New-Object System.Drawing.Imaging.EncoderParameters 1
-    $ep.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter ([System.Drawing.Imaging.Encoder]::Quality), 60L
-    $ms = New-Object System.IO.MemoryStream
-    $small.Save($ms, $enc, $ep)
-    $b64 = [Convert]::ToBase64String($ms.ToArray())
-    for ($i = 0; $i -lt $b64.Length; $i += 2000) { Write-Host "B64:$($name):$($b64.Substring($i, [Math]::Min(2000, $b64.Length - $i)))" }
-    Write-Host "B64END:$name"
   } catch { Write-Host "desktop screenshot failed: $_" }
 }
 
@@ -38,7 +25,9 @@ foreach ($phase in 'first', 'second') {
   try {
     Start-Sleep -Seconds 15
     Save-Desktop "$phase-desktop-early"
+    Get-ChildItem env: | Where-Object Name -like 'WEBVIEW2*' | ForEach-Object { Write-Host "  env: $($_.Name)=$($_.Value)" }
     Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" | Where-Object { $_.CommandLine -notmatch '--type=' } | ForEach-Object { Write-Host "  browser cmdline: $($_.CommandLine)" }
+    Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\*','HKLM:\SOFTWARE\Policies\Microsoft\Edge' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  policy: $($_ | Out-String)" }
     netstat -ano | Select-String ':9222' | ForEach-Object { Write-Host "  netstat: $_" }
     $dtp = Join-Path $data 'WebView2\EBWebView\DevToolsActivePort'
     if (Test-Path $dtp) { Write-Host "  DevToolsActivePort: $((Get-Content $dtp) -join ' ')" } else { Write-Host '  (no DevToolsActivePort file)' }
