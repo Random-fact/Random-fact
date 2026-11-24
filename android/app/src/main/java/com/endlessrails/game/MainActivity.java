@@ -1,5 +1,6 @@
 package com.endlessrails.game;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
@@ -71,6 +72,9 @@ public class MainActivity extends Activity {
         hideSystemUi();
     }
 
+    /* "AndroidAds" is added as Object (the class is absent from the test build without the ad SDK); its methods are
+       annotated with @JavascriptInterface in AdsBridge and kept by proguard-rules.pro */
+    @SuppressLint({"JavascriptInterface", "SetJavaScriptEnabled"})
     private void createWebView() {
         web = new WebView(this);
         web.setBackgroundColor(0xff0b1017);
@@ -190,9 +194,11 @@ public class MainActivity extends Activity {
         }
     }
 
+    /* Android 7–12 only: from Android 13 the back button and the back gesture go to the OnBackInvokedCallback above */
     @Override
     @SuppressWarnings("deprecation")
-    public void onBackPressed() { handleBack(); }   // Android 7–12
+    @SuppressLint("GestureBackNavigation")
+    public void onBackPressed() { handleBack(); }
 
     private void handleBack() {
         if (web == null) { finish(); return; }

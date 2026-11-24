@@ -24,6 +24,9 @@ android/
 
 ## Build the Google Play release (Android Studio)
 
+Verified on 24 Nov 2026: `assembleDebug`, `assembleRelease`, `bundleRelease` and `lintRelease` build with Gradle 8.14.3,
+AGP 8.13.0, SDK platform 36 / build-tools 36.0.0, play-services-ads 25.5.0 and UMP 4.0.0 (command line, OpenJDK 21).
+
 1. Install Android Studio (current stable) with Android SDK Platform 36. Open the `android/` folder.
    If Studio asks to create the Gradle wrapper or to upgrade the Android Gradle plugin, accept (the AGP Upgrade
    Assistant handles AGP 9.x). Without Studio: `gradle wrapper --gradle-version 8.13`, then use `./gradlew`.
@@ -56,6 +59,8 @@ android/
   “Unlock by watching an ad” and confirms a dialog explaining the reward. The unlock is granted only on
   `onUserEarnedReward`; closing early grants nothing; failures show a clear message. Unlocks are stored permanently on the
   device. Limits: one video per 45 s, 15 per day. Max ad content rating: PG.
+* Permissions: the app declares `INTERNET` and `VIBRATE`; the ads SDK merges in `ACCESS_NETWORK_STATE`, `AD_ID`,
+  `ACCESS_ADSERVICES_*` and `WAKE_LOCK`. WorkManager's `FOREGROUND_SERVICE` is removed in the manifest (not used).
 * Optional hardening: AdMob server-side verification (SSV) of rewards needs a server; not used (rewards are cosmetic /
   convenience content, stored only on the device).
 

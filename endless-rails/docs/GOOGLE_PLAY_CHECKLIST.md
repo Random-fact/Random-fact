@@ -1,6 +1,6 @@
 # ENDLESS RAILS — Google Play pre-publication checklist
 
-Status as of 16 Nov 2026. ✅ = done in the project · ⬜ = **you** must do it (account, credentials, hosting, real-device testing).
+Status as of 24 Nov 2026. ✅ = done in the project · ⬜ = **you** must do it (account, credentials, hosting, real-device testing).
 Requirements change: re-check the linked Google pages on the day you submit.
 
 ## 1. Technical requirements
@@ -10,16 +10,16 @@ Requirements change: re-check the linked Google pages on the day you submit.
 | ✅ | Min SDK 24 (Android 7.0) — WebGL-capable WebView | `minSdk = 24` |
 | ✅ | Android App Bundle (AAB) build | `./gradlew bundleRelease` (see `android/README.md`) |
 | ✅ | 64-bit: the app has no native code of its own; the WebView and the AdMob SDK are 64-bit ready | — |
-| ⬜ | 16 KB memory-page compatibility (required for apps targeting Android 15+): no own native libs; confirm with Android Studio ▸ *Analyze APK* that no `.so` file is flagged | after the first AAB build |
+| ✅ | 16 KB memory-page compatibility (required for apps targeting Android 15+): the release APK/AAB contain **no** `.so` files (checked in the built files; `zipalign -c -P 16` passes) | — |
 | ✅ | Edge-to-edge (enforced at target 35+): content draws behind bars, safe-area insets passed to the page (`--ins-*`) | `MainActivity.pushInsets` |
 | ✅ | Predictive back / back gesture (`enableOnBackInvokedCallback`, `OnBackInvokedCallback` on 13+, `onBackPressed` before) | `MainActivity` |
 | ✅ | Large screens / foldables / orientation: no fixed orientation lock (ignored on large screens at API 36 anyway), resizable, config changes handled without restart | manifest |
 | ✅ | WebView renderer crash recovery (`onRenderProcessGone`), lifecycle save on pause | `MainActivity` |
-| ✅ | Permissions: `INTERNET` (ads only), `VIBRATE`; the ad SDK adds `ACCESS_NETWORK_STATE` and `AD_ID` | manifest |
+| ✅ | Permissions: the app asks for `INTERNET` (ads only) and `VIBRATE`. Merged in by the Google Mobile Ads SDK: `ACCESS_NETWORK_STATE`, `com.google.android.gms.permission.AD_ID`, `ACCESS_ADSERVICES_AD_ID/ATTRIBUTION/TOPICS` (Privacy Sandbox), `WAKE_LOCK` (WorkManager). `FOREGROUND_SERVICE` from WorkManager is removed (`tools:node="remove"`): the game runs no foreground service. All are normal (install-time) permissions — no runtime permission prompt | manifest, verified with `aapt2 dump badging` |
 | ✅ | Release minification (R8) with `@JavascriptInterface` kept | `proguard-rules.pro` |
-| ⬜ | Upload key + `keystore.properties`; enrol in **Play App Signing** | `android/README.md` §3 |
+| ✅/⬜ | Release key + `keystore.properties` used for the 2.0.0 build (see `docs/release/SIGNING.md`); **you**: change its password or create a new upload key, enrol in **Play App Signing** | `android/README.md` §3 |
 | ⬜ | Raise `versionCode` for every upload | `app/build.gradle.kts` |
-| ⬜ | Build the AAB in Android Studio (Gradle/Google Maven were not reachable from the environment this project was prepared in, so the Gradle build itself has **not** been run yet) | — |
+| ✅ | Gradle build: `assembleDebug`, `assembleRelease`, `bundleRelease`, `lintRelease` ran successfully (24 Nov 2026, Gradle 8.14.3, AGP 8.13.0, SDK 36, play-services-ads 25.5.0, UMP 4.0.0) | `docs/release/BUILD.md` |
 
 ## 2. Ads (AdMob rewarded only)
 | | Item |

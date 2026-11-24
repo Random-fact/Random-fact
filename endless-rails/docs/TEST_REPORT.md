@@ -930,3 +930,23 @@ bitmap textures except the existing window textures), same mechanics, cameras, t
 * Checks: the passage from inside in both trains (forward, back, up, down), the end doors, the line-up of platform
   people (wide and close), the HS nose at night; boot without errors; short soak (50 game days, HS, 10 cars, the walk
   camera in rotation, 14 station stops, 6 reloads): 0 errors.
+
+## Update 24 Nov 2026 (25): final release audit, optimisation and multiplatform builds
+Full report (Ukrainian): `docs/release/AUDIT_REPORT_UK.md`; run/build/ads/signing docs in `docs/release/`.
+* **Environment change:** Google Maven became reachable, so the **real Gradle build** ran for the first time: debug APK,
+  release APK, AAB and `lintRelease` (0 errors, 13 cosmetic warnings). Windows: Electron app (`desktop/`), NSIS installer
+  and portable .exe built; install/uninstall verified under Wine; the game window does not start under Wine 9.0, so the
+  app code was verified with the Linux Electron build. Web: standalone file verified from `file://`.
+* **Fixed:** station names could repeat on neighbouring stations (now a seeded cycle of 231 names: no repeat within 231
+  stations); web page without internet hung on the loading screen (now a message + retry); paused rendering with a still
+  camera reduced to every 4th frame; AdMob bridge (stale ads, background retries, duplicate bridge after WebView
+  recovery, callbacks after destroy); merged `FOREGROUND_SERVICE` permission removed; privacy policy wording about the
+  consent check / ad pre-load at start; lint findings; ads SDK 25.5.0; dead code; Windows installer running-app check.
+* **Balloons event:** a soak flag (“object on the rails”) turned out to be a **harness artefact** (stale world matrix of a
+  never-rendered group). Direct check: every balloon ≥ 53 m above the line after its full drift. A protective minimum
+  height over any nearby stretch of line was added anyway; the harness now updates matrices before checking.
+* **Tests:** 7 modes × trains × 10 cameras and controls (0 console errors); audio lifecycle (music off = 0 voices, no
+  doubling, hidden → suspended + auto-pause, resume, master 0); saves across reload (language, 9 settings, seed, position,
+  camera, mode, train, weather, time); UI at 11 sizes (0 overflow/overlap/clipping); soak 512 game days / 1058 km / 1458
+  event starts (0 JS errors); seed reproducibility; desktop app (protocol, saves, window state, full screen, permissions).
+* **Not tested:** real Android devices, live ads/consent forms, the .exe on real Windows, real-GPU frame rates.

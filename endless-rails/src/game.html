@@ -1113,6 +1113,19 @@ const Rail = {
     while (this.sneg[this.sneg.length - 1] > zi - 60) { const n = this.sneg.length, v = this.sneg[n - 1] - this.sgap(-n); this.sneg.push(v); this.sset.add(v); }
   },
   isStn(zi) { if (this.layout === 'dense') return ((zi % 3) + 3) % 3 === 0; this.growStations(zi); return this.sset.has(zi); },
+  /* station names: every pair of name halves once per cycle, in an order shuffled by the seed, so a town's name comes
+     back only after all the others (~240 stations: 1400+ km with a station every 6 km, far more on intercity spacing)
+     and two neighbouring stations never share a name. Pairs whose halves would merge oddly in any language are left out. */
+  nameOrder: null,
+  stnNames() {
+    if (this.nameOrder && this.nameOrder.seed === this.seed) return this.nameOrder;
+    const L = [], odd = (A, B) => A.toLowerCase().endsWith(B.toLowerCase()) || (A.slice(-1) === B[0] && /[a-zа-яіїєґ]/i.test(B[0]));
+    for (let a = 0; a < NAME_A.length; a++) for (let b = 0; b < NAME_B.length; b++) if (!Object.values(SNAME).some(t => odd(t[0][a % t[0].length], t[1][b % t[1].length]))) L.push([a, b]);
+    for (let i = L.length - 1; i > 0; i--) { const j = Math.floor(H(this.seed, i, 920) * (i + 1)), t = L[i]; L[i] = L[j]; L[j] = t; }
+    L.seed = this.seed; return (this.nameOrder = L);
+  },
+  /* running number of the station at zone zi (0 at the start, negative behind it) */
+  stnOrd(zi) { if (this.layout === 'dense') return Math.round(zi / 3); this.growStations(zi); const i = this.spos.indexOf(zi); return i >= 0 ? i : -this.sneg.indexOf(zi); },
   /* zone index of the k-th station after (dir > 0) or before (dir < 0) zone zi, k >= 1 */
   stnFrom(zi, dir, k) {
     k = k || 1; if (this.layout === 'dense') { let z = zi; for (let n = 0; n < k; ) { z += dir; if (((z % 3) + 3) % 3 === 0) n++; } return z; }
@@ -1127,7 +1140,7 @@ const Rail = {
     if (this.isStn(zi)) {
       const k = H(sd, zi, 5);
       z.kind = 'station'; z.sk = k < .3 ? 'city' : k < .55 ? 'town' : k < .8 ? 'village' : 'forest';
-      z.na = Math.floor(H(sd, zi, 6) * NAME_A.length); z.nb = Math.floor(H(sd, zi, 7) * NAME_B.length);
+      { const L = this.stnNames(), n = L[((this.stnOrd(zi) % L.length) + L.length) % L.length]; z.na = n[0]; z.nb = n[1]; }
       Object.defineProperty(z, 'name', { get() { return stationName(this.na, this.nb); }, enumerable: true });
       z.half = z.sk === 'city' ? 650 : z.sk === 'town' ? 450 : 260; z.dblHalf = 700; z.xing = false;
       z.platSide = H(sd, zi, 8) < .5 ? 1 : -1; z.platSide = 1;
@@ -6692,8 +6705,11 @@ const EVDEFS = [
         const g = new THREE.Group(), env = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true })), bk = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.2, 1.6), new THREE.MeshLambertMaterial({ color: 0x6b4a2a }));
         bk.position.y = -R * 1.25 - 3.2; g.add(env, bk);
         for (const [x, z] of [[-.7, -.7], [.7, -.7], [-.7, .7], [.7, .7]]) { const r = new THREE.Mesh(new THREE.BoxGeometry(.04, 3.4, .04), new THREE.MeshBasicMaterial({ color: 0x222222 })); r.position.set(x, -R * 1.25 - 1.4, z); g.add(r); }
-        const alt = o.gy + 70 + Math.random() * 190; g.position.set(o.x, alt, o.z); Events.add(E, g);
-        list.push({ g, R, alt, ph: Math.random() * 6, burn: 0, bt: Math.random() * 6, vx: (Math.random() - .5) * 1.6, vz: (Math.random() - .5) * 1.6 });
+        /* lowest allowed height: well above the line wherever the drift (up to ~300 m in 150 s) could carry the balloon —
+           on a winding route a point far to the side can lie next to another stretch of the track — and above the ground */
+        let floor = o.gy + 35; { const q = {}; for (let ss = o.s - 1400; ss <= o.s + 1400; ss += 25) { Rail.pose(ss, q); if (Math.hypot(q.x - o.x, q.z - o.z) < 420) floor = Math.max(floor, q.y + R * 1.25 + 22); } }
+        const alt = Math.max(o.gy + 70 + Math.random() * 190, floor + 10); g.position.set(o.x, alt, o.z); Events.add(E, g);
+        list.push({ g, R, alt, floor, ph: Math.random() * 6, burn: 0, bt: Math.random() * 6, vx: (Math.random() - .5) * 1.6, vz: (Math.random() - .5) * 1.6 });
       }
       E.data = { list }; return true;
     },
@@ -6701,7 +6717,7 @@ const EVDEFS = [
       const wx = Math.sin(Env.windA) * (1 + Env.wind * 4), wz = Math.cos(Env.windA) * (1 + Env.wind * 4);
       for (const b of E.data.list) {
         b.bt -= dt; if (b.bt < 0) { b.burn = 1.2 + Math.random() * 1.5; b.bt = 5 + Math.random() * 9; const d = b.g.position.distanceTo(c.cam); if (d < 500 && Sound.ok) Sound.crack(0, b.burn, clamp(1 - d / 500, 0, 1) * .05, 300, .7); }
-        b.burn = Math.max(0, b.burn - dt); b.alt += (b.burn > 0 ? 1.4 : -.35) * dt;
+        b.burn = Math.max(0, b.burn - dt); b.alt += (b.burn > 0 ? 1.4 : -.35) * dt; if (b.alt < b.floor + 3) { b.alt = Math.max(b.alt, b.floor); b.burn = Math.max(b.burn, 1.5); }
         b.g.position.x += (wx * .5 + b.vx) * dt; b.g.position.z += (wz * .5 + b.vz) * dt; b.g.position.y = b.alt + Math.sin(E.t * .3 + b.ph) * 1.5; b.g.rotation.y += dt * .03;
         if (b.burn > 0) GlowPts.add(b.g.position.x, b.g.position.y - b.R * 1.25 - 1.6, b.g.position.z, 3.5, 1, .6, .2, .6 + .4 * Math.random());
       }
