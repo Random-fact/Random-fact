@@ -44,3 +44,4 @@ GitHub Actions (`.github/workflows/endless-rails-windows.yml`) збирає `.ex
 Готовий файл лежить в артефакті `EndlessRails-Windows`.
 
 `--debug` у командному рядку вмикає інструменти розробника (F12) і контекстне меню.
+`--selftest` використовує CI: гра сама проходить меню, і результат записується в `log.txt`.
