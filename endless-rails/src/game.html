@@ -1741,21 +1741,9 @@ function terrH(b, u, x, z) {
 /* height of the rendered terrain mesh at (s, u): the same rows / columns and triangle split as Chunk.buildTerrain, so roads,
    lamps and vehicles sit exactly on the visible ground instead of on the analytic surface between coarse columns */
 const MHC = new Map();
-function meshClear() { MHC.clear(); RSPAN.clear(); }
-/* how far a road across the line can run before the ground gets too steep (>20 % between samples) or climbs more than 30 m:
-   beyond that the road ends instead of climbing a mountainside */
-const RSPAN = new Map();
+function meshClear() { MHC.clear(); }
 /* RMAX: roads run out to (nearly) the edge of the generated land, so their ends are beyond the visible distance */
 const RMAX = 1040;
-function roadSpan(s, lo, hi) {
-  const key = Math.round(s * 10) + '|' + lo + '|' + hi; let r = RSPAN.get(key); if (r) return r;
-  let L = lo, R = hi;
-  for (const sg of [1, -1]) {
-    const lim = sg > 0 ? hi - BEDC : BEDC - lo; let prev = meshH(s, BEDC + sg * 30);
-    for (let du = 36; du <= lim; du += 6) { const h = meshH(s, BEDC + sg * du); if (Math.abs(h - prev) > (du < 90 ? 1.2 : .75) || h < .3) { if (sg > 0) R = BEDC + du - 6; else L = BEDC - du + 6; break; } prev = h; }
-  }
-  r = [L, R]; if (RSPAN.size > 400) RSPAN.clear(); RSPAN.set(key, r); return r;
-}
 /* lowest point of the rendered ground under a footprint (centre + 8 points on radius r): buildings and landmarks stand on it
    and run into the slope on the uphill side, so no corner of them hangs in the air */
 function groundMin(s, u, r) { let h = meshH(s, u); if (r > 0) for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; h = Math.min(h, meshH(s + Math.cos(a) * r, u + Math.sin(a) * r)); } return h; }
@@ -2171,8 +2159,6 @@ function platTex(n) {
 }
 const PLANE = new THREE.PlaneGeometry(4, 1); PLANE.shared = true;
 const FLASHBOX = new THREE.BoxGeometry(.3, .3, .3); FLASHBOX.shared = true;
-const WALL = [[.78, .74, .68], [.7, .66, .6], [.82, .8, .76], [.62, .6, .58], [.55, .62, .7], [.85, .72, .6], [.9, .85, .75]];
-const ROOF = [[.55, .22, .16], [.4, .26, .2], [.3, .3, .33], [.5, .3, .18]];
 
 const ZoneDecor = {
   build(ch, B) { for (const t of this.tasks(ch, B)) t(); },
@@ -2660,7 +2646,7 @@ const Town = {
     if (flat) this.flatRoof(Bl, o, -w / 2 - .2, -d / 2 - .2, w / 2 + .2, d / 2 + .2, hgt, [.4, .4, .42], .4);
     else { const hh = (ridgeZ ? w : d) * (S.hm > 1 ? .3 : .42) + (S.n === 'північне дерев’яне' || S.n === 'гірські шале' ? .5 : 0); this.gable(Bl, o, w, d, hgt, hh, ridgeZ, rc, wc);
       if (r(6) < .75) this.chimney(Bl, o, (r(7) - .5) * w * .5, hgt + hh * .45, (r(8) - .5) * d * .3, hh * .8);
-      if (fl === 1 && r(9) < .3 && hh > 1.8) { const dx = ridgeZ ? 0 : 0; this.box(Bl, o, ridgeZ ? -w * .22 : 0, hgt + hh * .15, ridgeZ ? 0 : -d * .22, 1.5, 1.3, 1.3, wc); } }
+      if (fl === 1 && r(9) < .3 && hh > 1.8) { this.box(Bl, o, ridgeZ ? -w * .22 : 0, hgt + hh * .15, ridgeZ ? 0 : -d * .22, 1.5, 1.3, 1.3, wc); } }
     /* door + porch roof on the front (local -z side) */
     this.box(Bl, o, (r(10) - .5) * w * .5, 0, -d / 2 - .02, 1.1, 2.1, .12, [.3, .2, .14]); this.box(Bl, o, 0, 2.3, -d / 2 - .5, 2.4, .12, 1.0, [.28, .26, .27]);
     if (r(11) < .35) this.box(Bl, o, w / 2 + 2.2, 0, 0, 4, 2.6, Math.min(d, 6), [.7, .7, .68]); // garage
@@ -3368,7 +3354,7 @@ class Train {
   }
   /* dynamic light halos of the consist: head lamps on the loco, red tail lamps on the last car */
   glows(on, night) {
-    const v = this.v3, L = this.loco, k = on ? .35 + .9 * night : .08;
+    const v = this.v3;
     /* the headlight glows are for outside views: from the cab (or inside the train) the 2.4 m glow sprites showed through
        the gap under the nose as a bright white bar where the light seemed to start */
     /* no glow sprites at the own headlights (the player asked for the beams only): the lit lamp lenses and the beams show the light */
@@ -3667,7 +3653,7 @@ function drawHSPanels(L, ph, speedKmh, thr, wxTxt) {
   c.fillText(_T('АЗШ') + ' ' + _T(lim.mode === 'off' ? 'ВИМК.' : lim.atp === 'brake' ? 'ГАЛЬМУВАННЯ' : lim.atp === 'warn' ? 'ПЕРЕВИЩЕННЯ' : 'ОК'), 360, 224, 270);
   c.fillStyle = '#9fb3c8'; c.fillText(_T('Магістраль {0} бар', fmtN(ph.p, 1)), 360, 254, 270);
   c.fillStyle = '#26323f'; c.fillRect(30, 296, 580, 8); c.fillStyle = '#4aa3ff'; c.fillRect(30, 296, 580 * thr, 8);
-  c.fillStyle = '#e8a33d'; const notch = Math.round(thr * 4); for (let i = 0; i < 4; i++) c.fillRect(30 + 580 * (i + 1) / 4 - 2, 290, 3, 20);
+  c.fillStyle = '#e8a33d'; for (let i = 0; i < 4; i++) c.fillRect(30 + 580 * (i + 1) / 4 - 2, 290, 3, 20);
   L.tex.needsUpdate = true;
   /* traction display: large, high-contrast lines with margins (it is small on a phone screen) */
   const d = L.cv2.getContext('2d'); d.fillStyle = '#04070b'; d.fillRect(0, 0, 320, 160); d.textAlign = 'left'; d.textBaseline = 'alphabetic';
@@ -4841,7 +4827,7 @@ const Tutor = {
     if (!this.on) return; const s = this.steps[this.si]; if (!s) return;
     /* hold the set speed until the driver touches the controls */
     if (this.hold != null) { if (this.flags.touched) this.hold = null; else { const err = this.hold - G.phys.v; G.thrT = clamp(G.thrT + err * dt * .4, 0, 1); G.brkT = 0; } }
-    if (!s.info && !s.result && s.check) { if (s.check(dt)) this.next(); else if (s.txt && this.si === this.si) { const p = $('lesson').querySelector('.lb p'); const t = s.txt(); if (p && p.textContent !== t) p.textContent = t; } }
+    if (!s.info && !s.result && s.check) { if (s.check(dt)) this.next(); else if (s.txt) { const p = $('lesson').querySelector('.lb p'); const t = s.txt(); if (p && p.textContent !== t) p.textContent = t; } }
   }
 };
 
@@ -6081,10 +6067,6 @@ function farFog(mat, ground, rise, keep) {
   return mat;
 }
 /* hazy colour for distant sky objects (they ignore scene fog so they stay visible far away) */
-const Haze = {
-  col(c, k) { const f = Env.fogCol; return [c[0] + (f.r - c[0]) * k, c[1] + (f.g - c[1]) * k, c[2] + (f.b - c[2]) * k]; }
-};
-function basicMat(hex, o) { return new THREE.MeshBasicMaterial(Object.assign({ color: hex, fog: false }, o || {})); }
 
 const EventLog = {
   list: [],
@@ -6520,14 +6502,13 @@ function slideStart(E, c, n, kind) {
 /* rolling rocks: smoothstep from the slope to the stop (the old curve reached 1.8 at the end, so every rock flew 80 %
    past its stopping place, across both tracks and into the ground on the far side) */
 function slideTick(E, dt, c) {
-  const D = E.data; let dust = 0;
+  const D = E.data;
   for (const r of D.rocks) {
     const t = E.t - r.d; if (t < 0) continue; r.m.visible = true; const f = clamp(t / r.T, 0, 1), e = f * f * (3 - 2 * f), bounce = Math.abs(Math.sin(t * 5)) * (1 - f) * 1.4 * r.r;
     r.m.position.set(r.x0 + (r.x1 - r.x0) * e, r.y0 + (r.y1 - r.y0) * e + bounce + r.r * .5, r.z0 + (r.z1 - r.z0) * e); r.m.rotation.x += dt * 3 * (1 - f); r.m.rotation.z += dt * 2 * (1 - f);
     if (f < 1 && Math.random() < dt * 8) Events.ps.dust.emit(r.m.position.x, r.m.position.y, r.m.position.z, (Math.random() - .5) * 4, 2 + Math.random() * 3, (Math.random() - .5) * 4, 4, 4, 22, D.kind === 'snow' ? [.95, .97, 1] : [.5, .46, .4], .4, { drag: .5 });
   }
 }
-function fireStart(E, c) { /* shared by wildfire */ }
 
 const EVDEFS = [
   { id: 'birds', name: 'Зграя птахів', cat: 'life', rar: 0, w: 3, cd: 240, dur: 40, desc: 'Птахи перетинають колію.', msg: 'Над колією пролітає зграя птахів',
@@ -6622,7 +6603,7 @@ const EVDEFS = [
 
   { id: 'wildfire', name: 'Лісова пожежа', cat: 'weather', rar: 2, w: 1.2, cd: 1800, dur: 190, desc: 'Горить схил поряд із колією; обмеження швидкості 80 км/год.', msg: 'Поруч із колією палає лісова пожежа',
     ok: c => c.bio.forest > .4 && Env.rain < .1 && c.bio.urban < .2 && c.bio.tun < .1 && !Events.zoneBad(c.s + c.dir * 900),
-    start(E, c) { const side = Math.random() < .5 ? -1 : 1, o = Events.P(900, side * (140 + Math.random() * 100), c), tl = (a, b) => 0; E.data = { x: o.x, z: o.z, y: o.gy, side, s0: o.s, acc: 0, sm: 0, c: .0 }; tempLimit(E, o.s - 300, o.s + 300, 80, 'пожежа'); E.done = cc => (cc.s - o.s) * cc.dir > 600; return true; },
+    start(E, c) { const side = Math.random() < .5 ? -1 : 1, o = Events.P(900, side * (140 + Math.random() * 100), c); E.data = { x: o.x, z: o.z, y: o.gy, side, s0: o.s, acc: 0, sm: 0, c: .0 }; tempLimit(E, o.s - 300, o.s + 300, 80, 'пожежа'); E.done = cc => (cc.s - o.s) * cc.dir > 600; return true; },
     tick(E, dt, c) { const D = E.data, k = Math.min(1, E.t / 10); D.acc += dt * 110 * k; D.sm += dt * 40 * k; const wx = Env.wind * 6 + 4, hd = Rail.pose(D.s0, {}).hd;
       while (D.acc > 1) { D.acc--; const dx = (Math.random() - .5) * 110, dz = (Math.random() - .5) * 70, x = D.x + Math.cos(hd) * dx, z = D.z - Math.sin(hd) * dx + dz; Events.ps.fire.emit(x, D.y + 1, z, (Math.random() - .5) * 2, 6 + Math.random() * 8, (Math.random() - .5) * 2, 1.4 + Math.random(), 7, 2, [1, .55, .12], .85, { col1: [.7, .12, .02] }); }
       while (D.sm > 1) { D.sm--; Events.ps.smoke.emit(D.x + (Math.random() - .5) * 80, D.y + 8, D.z + (Math.random() - .5) * 60, wx + Math.random() * 3, 9 + Math.random() * 6, (Math.random() - .5) * 3, 16, 14, 90, [.16, .15, .15], .5, { drag: .05 }); }
@@ -6631,7 +6612,7 @@ const EVDEFS = [
   { id: 'tornado', name: 'Торнадо', cat: 'weather', rar: 2, w: 1, cd: 2400, dur: 100, desc: 'Далеко від колії проходить вирва; потяг не наближається до неї.', msg: 'Удалині бачимо торнадо. Збережіть дистанцію',
     ok: c => (Env.cloud > .7 || wxIn(c, 'storm')) && c.bio.mount < .4 && c.bio.urban < .2 && c.bio.dip < .2 && c.bio.tun < .1,
     start(E, c) { const side = Math.random() < .5 ? -1 : 1, o = Events.P(900, side * (480 + Math.random() * 120), c); E.data = { x: o.x, z: o.z, y: o.gy, side, s0: o.s, ang: 0, acc: 0, hd: o.hd, off: 0 }; Env.cloud = Math.max(Env.cloud, .9); E.done = cc => (cc.s - o.s) * cc.dir > 900; return true; },
-    tick(E, dt, c) { const D = E.data, k = Math.min(1, E.t / 8, (E.dur - E.t) / 10); D.ang += dt * 3.2; D.off += dt * 7; const rx = -Math.cos(D.hd) * D.side * D.off, rz = Math.sin(D.hd) * D.side * D.off, cx = D.x + rx - Math.sin(D.hd) * E.t * 3, cz = D.z + rz - Math.cos(D.hd) * E.t * 3 * 0; D.acc += dt * 260 * k;
+    tick(E, dt, c) { const D = E.data, k = Math.min(1, E.t / 8, (E.dur - E.t) / 10); D.ang += dt * 3.2; D.off += dt * 7; const rx = -Math.cos(D.hd) * D.side * D.off, rz = Math.sin(D.hd) * D.side * D.off; D.acc += dt * 260 * k;
       const px = D.x + rx, pz = D.z + rz;
       while (D.acc > 1) { D.acc--; const h = Math.pow(Math.random(), 1.3) * 430, r = 6 + h * .16 + Math.random() * 4, a = D.ang + h * .018 + Math.random() * .6, sx = px + Math.cos(a) * r + Math.sin(h * .01 + E.t) * 8, sz = pz + Math.sin(a) * r;
         Events.ps.dust.emit(sx, D.y + h, sz, -Math.sin(a) * 22, 6, Math.cos(a) * 22, .9, 16 + h * .06, 30 + h * .08, h < 60 ? [.45, .38, .3] : [.38, .4, .43], .5 * k, { drag: .1 }); }
@@ -6829,7 +6810,6 @@ const CamMgr = {
       this.applyLook(L, inp, dt, sens, 1.45);
       const mv = InputManager.keys, pm = InputManager.pad.move, wk = this.walk, wp = window.WalkPad || { f: 0, s: 0 };
       const f = (mv.KeyW ? 1 : 0) - (mv.KeyS ? 1 : 0) - pm[1] + wp.f, sd = (mv.KeyD ? 1 : 0) - (mv.KeyA ? 1 : 0) + pm[0] + wp.s;
-      const fw = Math.cos(L.yaw) * f + Math.sin(L.yaw) * sd * 0, ss = -Math.sin(L.yaw) * f + Math.cos(L.yaw) * sd;
       const lastPax = train.items.filter(q => q.kind === 'car' && !(q.car && q.car.tail)).pop(), wMax = lastPax ? lastPax.off + lastPax.len - 1.2 : train.length - 1.2;   /* the HS tail car has no interior */
       wk.w = clamp(wk.w - (Math.cos(L.yaw) * f + Math.sin(L.yaw) * sd) * 2.2 * dt, LOCO_LEN + GAP + 1.2, wMax);
       /* near a car end and in the passage the camera stays inside the end-door opening (it used to slide through the end walls) */
@@ -7424,7 +7404,7 @@ const CabGlass = {
 let renderer, scene, camera, sky, precip, cabLight, engineReady = false;
 const isTouch = matchMedia('(pointer:coarse)').matches;
 const G = {
-  mode: 'free', thrT: 0, brkT: 0, lights: false, wipers: false, cabinLight: true, cruise: false, cruiseV: 25, paused: false, horn: false, slope: 0, fadeRev: 0, revT: 0, freezeTime: false, t: 0, seed: 1, running: false, last: 0, saveT: 5, emT: 0, wipeSweep: 0, mid: new THREE.Vector3(), camVel: new THREE.Vector3(), prevCam: new THREE.Vector3(), bio: null,
+  mode: 'free', thrT: 0, brkT: 0, lights: false, wipers: false, cabinLight: true, cruise: false, cruiseV: 25, paused: false, horn: false, slope: 0, fadeRev: 0, revT: 0, freezeTime: false, t: 0, seed: 1, running: false, last: 0, saveT: 5, emT: 0, wipeSweep: 0, mid: new THREE.Vector3(), camVel: new THREE.Vector3(), prevCam: new THREE.Vector3(), prevQ: new THREE.Quaternion(), camMovedAt: 0, bio: null,
   applySetting(k, v) {
     if (k === 'orient') applyOrientation(); if (k === 'gfx') Quality.choose(v); if (k === 'weather') { Weather.lock = v; if (v !== 'auto') Weather.force(v); }
     if (k === 'music' || k === 'sfx' || k === 'amb' || k === 'master' || k === 'ui' || k === 'voice' || AUDIO_CATS.some(c => c[2] === k)) Sound.setVols(); if (k === 'ui') Sound.uiTone(0); if (k === 'dayMin') G.freezeTime = false;
@@ -7663,8 +7643,9 @@ function frame(now) {
   if (!G.running) { Sound.hold(true); if (Sound.ok) Music.update(1 / 60, SettingsManager.v.musicOn); if (!G.idleDrawn) { G.idleDrawn = true; renderAll(); } return; }
   /* behind the main menu the paused world is redrawn at a third of the rate (saves battery) */
   if (G.inMenu && (G.menuF = (G.menuF || 0) + 1) % 3) { G.last = now; return; }
-  /* paused (camera can still move): half rate is enough and halves the GPU work while nothing else changes */
-  if (G.paused && !G.inMenu && (G.pauseF = (G.pauseF || 0) + 1) % 2) { G.last = now; return; }
+  /* paused (camera can still move): half rate is enough and halves the GPU work while nothing else changes; once the
+     camera has been still for a second only every fourth frame is drawn (rain and the sky keep moving, the GPU mostly rests) */
+  if (G.paused && !G.inMenu && (G.pauseF = (G.pauseF || 0) + 1) % (now - G.camMovedAt > 1000 ? 4 : 2)) { G.last = now; return; }
   GlowPts.begin();
   const raw = Math.min(.25, (now - G.last) / 1000); G.last = now; const dt = Math.min(.05, raw); G.dtLast = dt; if (!G.inMenu) Quality.sample(raw);
   const sim = G.paused ? 0 : dt; G.t += sim; const p = G.phys, tr = G.train, kb = InputManager.keys, id = CamMgr.id, walking = id === 'walk' || id === 'photo';
@@ -7701,10 +7682,11 @@ function frame(now) {
   if (sim > 0) { Tutor.update(dt); Stats.tick(dt, G); Achievements.tick(dt); } Guide.update(dt); Profile.tick(dt);
   tr.items[0].g.getWorldPosition(G.mid); tr.pointAt(tr.length * .4, 0, 0, G.mid); sky.shadowTarget = G.mid;
   /* camera */
-  const prev = G.prevCam.copy(camera.position);
+  const prev = G.prevCam.copy(camera.position); G.prevQ.copy(camera.quaternion);
   CamMgr.update(dt, { train: tr, phys: p, sens: SettingsManager.v.sens, fov: SettingsManager.v.fov, t: G.t, speed: G.paused ? 0 : p.v, acc: G.paused ? 0 : p.acc, lat: G.paused ? 0 : G.lat || 0 });
   StationCat.update(dt, G);
   G.camVel.copy(camera.position).sub(prev).divideScalar(Math.max(dt, .001)); if (G.camVel.length() > 120) G.camVel.set(0, 0, 0);
+  if (!G.paused || camera.position.distanceToSquared(prev) > 1e-6 || camera.quaternion.angleTo(G.prevQ) > 1e-4) G.camMovedAt = now;
   /* lights, wipers, details */
   const L = tr.loco, night = Math.max(Env.night, Env.tunnel * .8);
   L.spot.intensity = G.lights ? 1.1 + 2.4 * night : 0; MH.head.color.setScalar(G.lights ? 1 : .18); MH.tail.color.setRGB(G.lights ? 1 : .2, 0, 0);
@@ -7790,7 +7772,15 @@ function engineBoot() { try { initEngine(); } catch (e) { $('load').textContent 
   function set(f) { var v = Math.round(f * 100) + '%'; if (bar) bar.style.width = v; if (pct) pct.textContent = v; }
   function later(f) { var done = false; function go() { if (!done) { done = true; f(); } } requestAnimationFrame(function () { setTimeout(go, 0); }); setTimeout(go, 250); }
   function run(id) { var t = document.getElementById(id); if (!t) return; var s = document.createElement('script'); s.textContent = t.textContent; t.parentNode.removeChild(t); document.body.appendChild(s); }
-  function game() { set(.4); later(function () { run('er-game'); set(.65); later(function () { if (window.__bootGame) window.__bootGame(); }); }); }
+  /* the web page without a connection: three.js could not be fetched, so the game cannot start; say so instead of
+     leaving the loading bar standing still */
+  function fail() {
+    var uk = /^(uk|ru)/i.test(navigator.language || ''), sub = document.getElementById('ldsub');
+    if (txt) txt.textContent = uk ? 'Не вдалося завантажити 3D-рушій (three.js). Перевірте з’єднання з інтернетом.' : 'Could not load the 3D engine (three.js). Check your internet connection.';
+    if (pct) pct.textContent = '';
+    if (sub && !document.getElementById('ldretry')) { var b = document.createElement('button'); b.id = 'ldretry'; b.textContent = uk ? 'Спробувати знову' : 'Try again'; b.style.cssText = 'margin-top:14px;padding:10px 22px;font:inherit;font-weight:700;letter-spacing:.06em;background:#e8a33d;color:#0b1017;border:0;border-radius:8px;cursor:pointer'; b.onclick = function () { location.reload(); }; sub.parentNode.insertBefore(b, sub.nextSibling); }
+  }
+  function game() { if (typeof THREE === 'undefined') { fail(); return; } set(.4); later(function () { run('er-game'); set(.65); later(function () { if (window.__bootGame) window.__bootGame(); }); }); }
   if (txt) txt.textContent = '…'; set(.04);
   later(function () {
     set(.1);

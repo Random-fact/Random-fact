@@ -40,12 +40,29 @@ public class AdsBridge {
     private final ConsentInformation consent;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final AtomicBoolean started = new AtomicBoolean(false);
-    private RewardedAd ad;
+    /* a loaded rewarded ad is valid for one hour (AdMob); an older one is dropped and a fresh one requested */
+    private static final long AD_TTL_MS = 55L * 60 * 1000;
+    private volatile RewardedAd ad;
+    private volatile long adAt;
+    private volatile boolean destroyed;
     private boolean loading, sdkReady;
     private long retryMs = 15000;
+    private final Runnable retry = new Runnable() { @Override public void run() { load(); } };
 
     static Object create(Activity a, WebView w) { return new AdsBridge(a); }
-    static void destroy(Object o) { if (o instanceof AdsBridge) ((AdsBridge) o).ad = null; }
+    static void destroy(Object o) {
+        if (!(o instanceof AdsBridge)) return;
+        AdsBridge b = (AdsBridge) o; b.destroyed = true; b.ad = null; b.ui.removeCallbacksAndMessages(null);
+    }
+    /** App in the background: no ad requests are retried until it is back (saves data and battery). */
+    static void setForeground(Object o, boolean fg) {
+        if (!(o instanceof AdsBridge)) return;
+        AdsBridge b = (AdsBridge) o;
+        if (!fg) b.ui.removeCallbacks(b.retry);
+        else b.ui.post(new Runnable() { @Override public void run() { if (b.ad == null || !b.fresh()) { b.ad = null; b.load(); } } });
+    }
+
+    private boolean fresh() { return ad != null && System.currentTimeMillis() - adAt < AD_TTL_MS; }
 
     private AdsBridge(Activity a) {
         act = a; main = (MainActivity) a;
@@ -75,13 +92,14 @@ public class AdsBridge {
     }
 
     private void load() {
-        if (!sdkReady || loading || ad != null || act.isFinishing()) return;
-        loading = true;
+        if (destroyed || !sdkReady || loading || fresh() || act.isFinishing()) return;
+        ad = null; loading = true; ui.removeCallbacks(retry);
         RewardedAd.load(act, BuildConfig.REWARDED_ID, new AdRequest.Builder().build(), new RewardedAdLoadCallback() {
-            @Override public void onAdLoaded(RewardedAd a) { loading = false; ad = a; retryMs = 15000; main.js("window.__ads&&__ads.ready(true)"); }
+            @Override public void onAdLoaded(RewardedAd a) { loading = false; if (destroyed) return; ad = a; adAt = System.currentTimeMillis(); retryMs = 15000; main.js("window.__ads&&__ads.ready(true)"); }
             @Override public void onAdFailedToLoad(LoadAdError e) {
-                loading = false; ad = null; main.js("window.__ads&&__ads.ready(false)");
-                ui.postDelayed(new Runnable() { @Override public void run() { load(); } }, retryMs);
+                loading = false; ad = null; if (destroyed) return; main.js("window.__ads&&__ads.ready(false)");
+                /* no fill / offline: try again later with a growing pause (15 s … 10 min) */
+                ui.postDelayed(retry, retryMs);
                 retryMs = Math.min(retryMs * 2, 10 * 60 * 1000);
             }
         });
@@ -89,7 +107,7 @@ public class AdsBridge {
 
     /* ---- called by the page (binder thread) ---- */
     @JavascriptInterface public boolean isEnabled() { return true; }
-    @JavascriptInterface public boolean isReady() { return ad != null; }
+    @JavascriptInterface public boolean isReady() { return fresh(); }
 
     @JavascriptInterface
     public void preload() { ui.post(new Runnable() { @Override public void run() { if (consent.canRequestAds()) { startSdk(); load(); } } }); }
@@ -109,7 +127,7 @@ public class AdsBridge {
         ui.post(new Runnable() {
             @Override public void run() {
                 final String qid = MainActivity.q(id);
-                if (ad == null) { main.js("__ads.fail(" + qid + ",'load')"); load(); return; }
+                if (!fresh()) { ad = null; main.js("__ads.fail(" + qid + ",'load')"); load(); return; }
                 RewardedAd a = ad; ad = null;
                 a.setFullScreenContentCallback(new FullScreenContentCallback() {
                     @Override public void onAdDismissedFullScreenContent() { main.js("__ads.closed(" + qid + ")"); load(); }

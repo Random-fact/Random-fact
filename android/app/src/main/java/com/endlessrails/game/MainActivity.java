@@ -65,6 +65,7 @@ public class MainActivity extends Activity {
         }
         if (Build.VERSION.SDK_INT >= 30) getWindow().setDecorFitsSystemWindows(false);
         tts = new Tts();
+        ads = AdsBridge.create(this, null);   // once per activity (a rebuilt WebView reuses it)
         createWebView();
         registerBack();
         hideSystemUi();
@@ -89,7 +90,6 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new Client());
         web.addJavascriptInterface(new App(), "AndroidApp");
         web.addJavascriptInterface(tts, "AndroidTTS");
-        ads = AdsBridge.create(this, web);
         if (ads != null) web.addJavascriptInterface(ads, "AndroidAds");
         web.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
             @Override
@@ -208,13 +208,18 @@ public class MainActivity extends Activity {
             web.onPause();
         }
         tts.stop();
+        AdsBridge.setForeground(ads, false);
         super.onPause();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        if (web != null) web.onResume();
+        if (web != null) {
+            web.onResume();
+            web.evaluateJavascript("try{window.__lifecycle&&__lifecycle('resume')}catch(e){}", null);
+        }
+        AdsBridge.setForeground(ads, true);
         hideSystemUi();
     }
 

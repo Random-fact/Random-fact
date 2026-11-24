@@ -1,0 +1,90 @@
+{
+  "name": "endless-rails",
+  "productName": "ENDLESS RAILS",
+  "version": "2.0.0",
+  "description": "ENDLESS RAILS - an endless train driving game",
+  "author": "Endless Rails",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "prepare-app": "node tools/prepare.js",
+    "start": "node tools/prepare.js && electron .",
+    "dist": "node tools/prepare.js && electron-builder --win nsis portable --x64"
+  },
+  "devDependencies": {
+    "electron": "45.2.3",
+    "electron-builder": "26.18.1",
+    "resedit": "2.0.3"
+  },
+  "build": {
+    "appId": "com.endlessrails.game",
+    "productName": "ENDLESS RAILS",
+    "copyright": "© 2026 Endless Rails",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "app/**/*",
+      "build/icon.png",
+      "package.json",
+      "!tools/**",
+      "!dist/**"
+    ],
+    "asar": true,
+    "electronLanguages": [
+      "en-US",
+      "uk",
+      "ru",
+      "de",
+      "fr",
+      "es",
+      "pt-BR",
+      "pt-PT",
+      "ro",
+      "ja",
+      "zh-CN"
+    ],
+    "afterPack": "tools/after-pack.js",
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false,
+      "executableName": "EndlessRails"
+    },
+    "nsis": {
+      "artifactName": "ENDLESS_RAILS_SETUP.exe",
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ENDLESS RAILS",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerLanguages": [
+        "en_US",
+        "uk_UA",
+        "ru_RU",
+        "de_DE",
+        "fr_FR",
+        "es_ES",
+        "pt_BR",
+        "ja_JP",
+        "zh_CN"
+      ],
+      "deleteAppDataOnUninstall": false,
+      "include": "build/installer.nsh"
+    },
+    "portable": {
+      "artifactName": "ENDLESS_RAILS_PORTABLE.exe"
+    }
+  }
+}

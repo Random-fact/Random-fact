@@ -7,4 +7,5 @@ import android.webkit.WebView;
 final class AdsBridge {
     static Object create(Activity a, WebView w) { return null; }
     static void destroy(Object o) { }
+    static void setForeground(Object o, boolean fg) { }
 }

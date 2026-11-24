@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- INTERNET: only for the voluntary rewarded ads and the consent form (the game itself runs offline).
          The Google Mobile Ads SDK merges in ACCESS_NETWORK_STATE and com.google.android.gms.permission.AD_ID. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- short haptic pulses (emergency brake, ATP); can be switched off in the game settings -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- merged in by WorkManager (used by the ads SDK for background pings); the game never runs a foreground service -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove" />
 
     <uses-feature android:glEsVersion="0x00020000" android:required="true" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
