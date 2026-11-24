@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"unsafe"
 
@@ -29,6 +30,11 @@ import (
 
 //go:embed game/index.html
 var gameHTML []byte
+
+// selftestJS walks through the menus and reports what it sees (used by CI with --selftest).
+//
+//go:embed selftest.js
+var selftestJS string
 
 const (
 	appTitle  = "Endless Rails"
@@ -90,7 +96,8 @@ const (
 	mbIconError   = 0x00000010
 	idYes         = 6
 
-	closeTimerID = 1
+	closeTimerID    = 1
+	selftestTimerID = 2
 )
 
 var (
@@ -99,34 +106,34 @@ var (
 	shell32  = windows.NewLazySystemDLL("shell32.dll")
 	kernel32 = windows.NewLazySystemDLL("kernel32.dll")
 
-	pRegisterClassExW    = user32.NewProc("RegisterClassExW")
-	pCreateWindowExW     = user32.NewProc("CreateWindowExW")
-	pDefWindowProcW      = user32.NewProc("DefWindowProcW")
-	pDestroyWindow       = user32.NewProc("DestroyWindow")
-	pShowWindow          = user32.NewProc("ShowWindow")
-	pUpdateWindow        = user32.NewProc("UpdateWindow")
-	pGetMessageW         = user32.NewProc("GetMessageW")
-	pTranslateMessage    = user32.NewProc("TranslateMessage")
-	pDispatchMessageW    = user32.NewProc("DispatchMessageW")
-	pPostQuitMessage     = user32.NewProc("PostQuitMessage")
-	pPostMessageW        = user32.NewProc("PostMessageW")
-	pLoadImageW          = user32.NewProc("LoadImageW")
-	pLoadCursorW         = user32.NewProc("LoadCursorW")
-	pGetSystemMetrics    = user32.NewProc("GetSystemMetrics")
-	pGetWindowLongPtrW   = user32.NewProc("GetWindowLongPtrW")
-	pSetWindowLongPtrW   = user32.NewProc("SetWindowLongPtrW")
-	pSetWindowPos        = user32.NewProc("SetWindowPos")
-	pGetWindowPlacement  = user32.NewProc("GetWindowPlacement")
-	pSetWindowPlacement  = user32.NewProc("SetWindowPlacement")
-	pMonitorFromWindow   = user32.NewProc("MonitorFromWindow")
-	pGetMonitorInfoW     = user32.NewProc("GetMonitorInfoW")
-	pMessageBoxW         = user32.NewProc("MessageBoxW")
-	pSetTimer            = user32.NewProc("SetTimer")
-	pKillTimer           = user32.NewProc("KillTimer")
-	pGetKeyState         = user32.NewProc("GetKeyState")
-	pGetDpiForWindow     = user32.NewProc("GetDpiForWindow")
-	pCreateSolidBrush    = gdi32.NewProc("CreateSolidBrush")
-	pShellExecuteW       = shell32.NewProc("ShellExecuteW")
+	pRegisterClassExW   = user32.NewProc("RegisterClassExW")
+	pCreateWindowExW    = user32.NewProc("CreateWindowExW")
+	pDefWindowProcW     = user32.NewProc("DefWindowProcW")
+	pDestroyWindow      = user32.NewProc("DestroyWindow")
+	pShowWindow         = user32.NewProc("ShowWindow")
+	pUpdateWindow       = user32.NewProc("UpdateWindow")
+	pGetMessageW        = user32.NewProc("GetMessageW")
+	pTranslateMessage   = user32.NewProc("TranslateMessage")
+	pDispatchMessageW   = user32.NewProc("DispatchMessageW")
+	pPostQuitMessage    = user32.NewProc("PostQuitMessage")
+	pPostMessageW       = user32.NewProc("PostMessageW")
+	pLoadImageW         = user32.NewProc("LoadImageW")
+	pLoadCursorW        = user32.NewProc("LoadCursorW")
+	pGetSystemMetrics   = user32.NewProc("GetSystemMetrics")
+	pGetWindowLongPtrW  = user32.NewProc("GetWindowLongPtrW")
+	pSetWindowLongPtrW  = user32.NewProc("SetWindowLongPtrW")
+	pSetWindowPos       = user32.NewProc("SetWindowPos")
+	pGetWindowPlacement = user32.NewProc("GetWindowPlacement")
+	pSetWindowPlacement = user32.NewProc("SetWindowPlacement")
+	pMonitorFromWindow  = user32.NewProc("MonitorFromWindow")
+	pGetMonitorInfoW    = user32.NewProc("GetMonitorInfoW")
+	pMessageBoxW        = user32.NewProc("MessageBoxW")
+	pSetTimer           = user32.NewProc("SetTimer")
+	pKillTimer          = user32.NewProc("KillTimer")
+	pGetKeyState        = user32.NewProc("GetKeyState")
+	pGetDpiForWindow    = user32.NewProc("GetDpiForWindow")
+	pCreateSolidBrush   = gdi32.NewProc("CreateSolidBrush")
+	pShellExecuteW      = shell32.NewProc("ShellExecuteW")
 	pGetModuleHandleW   = kernel32.NewProc("GetModuleHandleW")
 )
 
@@ -191,6 +198,7 @@ var (
 	ready     bool
 	closing   bool
 	debugMode bool
+	selftest  bool
 
 	fullscreen    bool
 	savedPlace    windowPlacement
@@ -204,8 +212,11 @@ func main() {
 	runtime.LockOSThread()
 
 	for _, a := range os.Args[1:] {
-		if a == "--debug" || a == "-debug" {
+		switch a {
+		case "--debug", "-debug":
 			debugMode = true
+		case "--selftest":
+			selftest = true
 		}
 	}
 
@@ -265,6 +276,11 @@ func main() {
 		}
 	} else {
 		startURL = fileURL(filepath.Join(appDir, "index.html"))
+	}
+	if selftest {
+		chromium.Init(`window.__erErrors=[];addEventListener('error',function(e){__erErrors.push(String(e.message))});` +
+			`addEventListener('unhandledrejection',function(e){__erErrors.push('promise: '+String(e.reason))});`)
+		pSetTimer.Call(hwnd, selftestTimerID, 12000, 0)
 	}
 	log.Printf("navigating to %s", startURL)
 	chromium.Navigate(startURL)
@@ -426,6 +442,12 @@ func wndProc(h, m, wp, lp uintptr) uintptr {
 			pDestroyWindow.Call(h)
 			return 0
 		}
+		if wp == selftestTimerID {
+			pKillTimer.Call(h, selftestTimerID)
+			log.Printf("selftest: running")
+			chromium.Eval(selftestJS)
+			return 0
+		}
 	case wmAppDestroy:
 		pKillTimer.Call(h, closeTimerID)
 		pDestroyWindow.Call(h)
@@ -447,8 +469,11 @@ func wndProc(h, m, wp, lp uintptr) uintptr {
 }
 
 func onWebMessage(s string) {
-	if s == "er:closed" && closing {
+	switch {
+	case s == "er:closed" && closing:
 		pPostMessageW.Call(hwnd, wmAppDestroy, 0, 0)
+	case strings.HasPrefix(s, "er:log:"):
+		log.Printf("page: %s", strings.TrimPrefix(s, "er:log:"))
 	}
 }
 

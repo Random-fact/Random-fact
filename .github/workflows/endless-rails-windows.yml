@@ -28,11 +28,10 @@ jobs:
       - name: Smoke test (launch, play, close, relaunch)
         timeout-minutes: 8
         shell: pwsh
-        run: |
-          npm install --no-save --no-audit --no-fund playwright-core@1.49.1
-          ./ci/smoke.ps1
+        run: ./ci/smoke.ps1
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: EndlessRails-Windows
           path: endless-rails-windows/dist/EndlessRails.exe
