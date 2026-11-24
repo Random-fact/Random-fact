@@ -237,13 +237,8 @@ func main() {
 	}
 	log.Printf("WebView2 runtime %s", v)
 
-	// Picked up by the WebView2 runtime when the browser process starts.
+	// Initial colour of the WebView before the page paints (avoids a white flash).
 	os.Setenv("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", fmt.Sprintf("FF%02X%02X%02X", bgR, bgG, bgB))
-	browserArgs := "--autoplay-policy=no-user-gesture-required"
-	if extra := os.Getenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"); extra != "" {
-		browserArgs = extra + " " + browserArgs
-	}
-	os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", browserArgs)
 
 	p := loadPrefs()
 	createWindow()

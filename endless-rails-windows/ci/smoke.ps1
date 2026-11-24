@@ -2,7 +2,10 @@
 $ErrorActionPreference = 'Stop'
 $out = Join-Path $PWD 'smoke-out'
 New-Item -ItemType Directory -Force $out | Out-Null
-$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9222'
+# Documented per-app policy for extra browser arguments (opens the DevTools port for the test only).
+$key = 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+New-Item -Path $key -Force | Out-Null
+New-ItemProperty -Path $key -Name 'EndlessRails.exe' -Value '--remote-debugging-port=9222' -PropertyType String -Force | Out-Null
 $data = Join-Path $env:LOCALAPPDATA 'EndlessRails'
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 
@@ -25,9 +28,7 @@ foreach ($phase in 'first', 'second') {
   try {
     Start-Sleep -Seconds 15
     Save-Desktop "$phase-desktop-early"
-    Get-ChildItem env: | Where-Object Name -like 'WEBVIEW2*' | ForEach-Object { Write-Host "  env: $($_.Name)=$($_.Value)" }
     Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" | Where-Object { $_.CommandLine -notmatch '--type=' } | ForEach-Object { Write-Host "  browser cmdline: $($_.CommandLine)" }
-    Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\*','HKLM:\SOFTWARE\Policies\Microsoft\Edge' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  policy: $($_ | Out-String)" }
     netstat -ano | Select-String ':9222' | ForEach-Object { Write-Host "  netstat: $_" }
     $dtp = Join-Path $data 'WebView2\EBWebView\DevToolsActivePort'
     if (Test-Path $dtp) { Write-Host "  DevToolsActivePort: $((Get-Content $dtp) -join ' ')" } else { Write-Host '  (no DevToolsActivePort file)' }
